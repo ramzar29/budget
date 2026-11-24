@@ -84,11 +84,22 @@ export function moisDuFixe(f) {
   return String(f.moisPaiement || '').split(/[,; ]+/).map(Number).filter(n => n >= 1 && n <= 12);
 }
 
-/** Dates de paiement d'une dépense fixe dans un mois (1er du mois pour les fréquences mensuelles et plus). */
+/**
+ * Jour du paiement (1 à 31) d'une dépense fixe mensuelle ou plus. Il est rangé dans la colonne
+ * dateReference (ex. « 24 ») pour ne pas ajouter de colonne au Sheet ; vide = le 1er.
+ */
+export function jourPaiement(f) {
+  const v = String(f.dateReference ?? '').trim();
+  const n = /^\d{1,2}$/.test(v) ? Number(v) : 1;
+  return n >= 1 && n <= 31 ? n : 1;
+}
+
+/** Dates de paiement d'une dépense fixe dans un mois (jour du paiement, ou le dernier jour si le mois est plus court). */
 export function datesFixe(f, moisTxt) {
   if (f.actif === false) return [];
   if (periodique(f.frequence)) return f.dateReference ? datesPeriodiques(f.dateReference, f.frequence, moisTxt) : [];
-  return moisDuFixe(f).includes(Number(moisTxt.slice(5, 7))) ? [`${moisTxt}-01`] : [];
+  if (!moisDuFixe(f).includes(Number(moisTxt.slice(5, 7)))) return [];
+  return [`${moisTxt}-${pad(Math.min(jourPaiement(f), finDuMois(moisTxt).getDate()))}`];
 }
 
 export function fixeDansLeMois(f, moisTxt) { return datesFixe(f, moisTxt).length > 0; }

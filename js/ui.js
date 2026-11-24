@@ -31,6 +31,21 @@ export function toast(message, type = 'ok') {
   toastMinuterie = setTimeout(() => { el.className = ''; }, 2600);
 }
 
+// Fenêtres ouvertes (feuilles, image en plein écran), de la plus ancienne à la plus récente :
+// le bouton « retour » du téléphone ferme la dernière.
+const ouvertes = [];
+export function ajouterFermable(fermer) {
+  ouvertes.push(fermer);
+  return () => { const i = ouvertes.lastIndexOf(fermer); if (i >= 0) ouvertes.splice(i, 1); };
+}
+/** Ferme la dernière fenêtre ouverte. Retourne false s'il n'y en avait aucune. */
+export function fermerDerniere() {
+  const f = ouvertes[ouvertes.length - 1];
+  if (!f) return false;
+  f();
+  return true;
+}
+
 /** Feuille modale (s'ouvre par le bas). Retourne { fermer, corps }. */
 export function feuille(titre, construire, { surFermer } = {}) {
   const fond = h('div', { class: 'fond-modal' });
@@ -42,11 +57,16 @@ export function feuille(titre, construire, { surFermer } = {}) {
     corps);
   fond.append(panneau);
   fond.addEventListener('click', e => { if (e.target === fond) fermer(); });
+  let fermee = false;
   function fermer(val) {
+    if (fermee) return;
+    fermee = true;
+    retirer();
     fond.classList.remove('ouvert');
     setTimeout(() => fond.remove(), 200);
     surFermer && surFermer(val);
   }
+  const retirer = ajouterFermable(() => fermer());
   document.body.append(fond);
   requestAnimationFrame(() => fond.classList.add('ouvert'));
   construire(corps, fermer);

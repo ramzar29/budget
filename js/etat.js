@@ -177,15 +177,16 @@ export async function rafraichirPrevus(refId) {
       if (m !== null && m !== Number(t.montant)) maj.push({ ...t, montant: m });
       continue;
     }
-    const valide = rev ? datesRevenu(rev, t.mois).includes(t.date)
-      : fx ? datesFixe(fx, t.mois).some(d => idFixe(fx, d) === t.id) : false; // modèle supprimé -> occurrence retirée
+    const dateFixe = fx ? datesFixe(fx, t.mois).find(d => idFixe(fx, d) === t.id) : null;
+    const valide = rev ? datesRevenu(rev, t.mois).includes(t.date) : !!dateFixe; // modèle supprimé -> occurrence retirée
     if (!valide) { maj.push({ ...t, supprime: true }); continue; }
-    const montant = rev ? montantA(rev, t.date) : montantFixe(fx, t.date);
+    const date = dateFixe || t.date; // jour du paiement d'une dépense fixe éventuellement modifié
+    const montant = rev ? montantA(rev, date) : montantFixe(fx, date);
     const nom = rev ? rev.nom : fx.nom;
     const categorie = rev ? (rev.categorie || 'Salaire') : fx.categorie;
     const sousCategorie = rev ? (rev.sousCategorie || 'Paie') : fx.sousCategorie;
-    if (montant !== t.montant || nom !== t.commerce || categorie !== t.categorie || sousCategorie !== t.sousCategorie) {
-      maj.push({ ...t, montant, commerce: nom, categorie, sousCategorie, saisiPar: rev ? (rev.personne || '') : t.saisiPar });
+    if (date !== t.date || montant !== t.montant || nom !== t.commerce || categorie !== t.categorie || sousCategorie !== t.sousCategorie) {
+      maj.push({ ...t, date, montant, commerce: nom, categorie, sousCategorie, saisiPar: rev ? (rev.personne || '') : t.saisiPar });
     }
   }
   if (maj.length) await sauver('Transactions', maj);

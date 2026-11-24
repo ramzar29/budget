@@ -2,7 +2,7 @@
 import { h, feuille, toast, confirmer, champ, champMontant, lireMontant } from './ui.js';
 import { E, categoriesPar, icone, reglage, rafraichirPrevus, utilisateurs } from './etat.js';
 import { sauver, supprimer, getMeta, setMeta, uuid } from './db.js';
-import { argent, FREQUENCES_FIXES, historiqueDe, montantA, montantFixe, periodique, aujourdhui, moisCourant, nomMois, normaliser } from './calc.js';
+import { argent, FREQUENCES_FIXES, historiqueDe, montantA, montantFixe, periodique, jourPaiement, aujourdhui, moisCourant, nomMois, normaliser } from './calc.js';
 import { tester, synchroniser } from './sync.js';
 import { definirNip, verifierNip, biometrieDisponible, biometrieActive, activerBiometrie, desactiverBiometrie } from './lock.js';
 
@@ -54,7 +54,7 @@ export async function ecranReglages(rafraichir) {
 
   // ---- Dépenses fixes
   const fixes = E.fixes.map(f => rangee(f.nom,
-    `${FREQUENCES_FIXES[f.frequence] || ''} · ${argent(montantFixe(f, aujourdhui()))} · ${f.categorie}${f.actif === false ? ' · inactif' : ''}`,
+    `${FREQUENCES_FIXES[f.frequence] || ''}${periodique(f.frequence) ? '' : ` (le ${jourPaiement(f)})`} · ${argent(montantFixe(f, aujourdhui()))} · ${f.categorie}${f.actif === false ? ' · inactif' : ''}`,
     () => modifierFixe(f, rafraichir)));
   racine.append(section('📌 Dépenses fixes', ...fixes,
     h('button', { class: 'btn lien', onclick: () => modifierFixe(null, rafraichir) }, '➕ Ajouter une dépense fixe')));
@@ -65,7 +65,7 @@ export async function ecranReglages(rafraichir) {
     rangee('Catégories de revenus', `${categoriesPar('revenu').size} catégories`, () => gererCategories('revenu', rafraichir)),
     rangee('Commerces connus', `${E.commerces.length} commerces`, () => gererCommerces(rafraichir))));
 
-  racine.append(h('p', { class: 'aide centre' }, 'Budget · v4'));
+  racine.append(h('p', { class: 'aide centre' }, 'Budget · v5'));
   return racine;
 }
 
@@ -255,8 +255,12 @@ function modifierFixe(f, rafraichir) {
     }
     const montant = champMontant(montantActuel);
     const aPartirDu = h('input', { type: 'date', value: aujourdhui() });
-    const ref = h('input', { type: 'date', value: f.dateReference || '' });
+    const ref = h('input', { type: 'date', value: periodique(f.frequence) ? (f.dateReference || '') : '' });
     const zoneRef = champ('Date d\'un paiement connu', ref, 'Ex. : le premier paiement. Les suivants sont calculés aux 7 ou 14 jours (4 ou 5 paiements selon le mois).');
+    // Jour du paiement (fréquences mensuelles et plus) : rangé dans dateReference, ex. « 24 ».
+    const jour = h('input', { type: 'number', inputmode: 'numeric', min: 1, max: 31, step: 1, placeholder: '1',
+      value: !nouveau && !periodique(f.frequence) ? String(jourPaiement(f)) : '' });
+    const zoneJour = champ('Jour du paiement', jour, 'Ex. : 24 pour le 24 du mois. Si le mois est plus court (ex. le 31), le dernier jour du mois est utilisé.');
     const freq = h('select', { onchange: () => majMois() }, ...Object.entries(FREQUENCES_FIXES).map(([k, v]) => h('option', { value: k, selected: k === f.frequence }, v)));
     const moisChoisis = new Set(String(f.moisPaiement || '').split(/[,; ]+/).map(Number).filter(Boolean));
     const grilleMois = h('div', { class: 'grille-mois' }, ...NOMS_MOIS.map((n, i) => {
@@ -268,6 +272,7 @@ function modifierFixe(f, rafraichir) {
     function majMois() {
       zoneMois.style.display = avecMois() ? '' : 'none';
       zoneRef.style.display = periodique(freq.value) ? '' : 'none';
+      zoneJour.style.display = periodique(freq.value) ? 'none' : '';
     }
     majMois();
     const motsCles = h('input', { type: 'text', value: f.motsCles || '', placeholder: 'Ex. : hydro, hydro-quebec' });
@@ -281,6 +286,8 @@ function modifierFixe(f, rafraichir) {
       if (!nom.value.trim() || !cat.value || m === null) return toast('Nom, catégorie et montant requis', 'erreur');
       if (avecMois() && !moisChoisis.size) return toast('Coche au moins un mois', 'erreur');
       if (periodique(freq.value) && !ref.value) return toast('Entre la date d\'un paiement connu', 'erreur');
+      const j = jour.value.trim() === '' ? 1 : Number(jour.value);
+      if (!periodique(freq.value) && !(Number.isInteger(j) && j >= 1 && j <= 31)) return toast('Jour du paiement : un nombre de 1 à 31', 'erreur');
       if (!nouveau && !aPartirDu.value) return toast('Choisis à partir de quand le montant s\'applique', 'erreur');
       // Historique des montants : les paiements avant « à partir du » gardent l'ancien montant.
       let h2 = hist.length ? hist : [{ du: '2000-01-01', montant: nouveau ? m : (Number(f.montant) || 0) }];
@@ -291,7 +298,7 @@ function modifierFixe(f, rafraichir) {
       const [c, s] = cat.value.split(SEP);
       const rec = { ...f, nom: nom.value.trim(), categorie: c, sousCategorie: s, montant: h2[h2.length - 1].montant, frequence: freq.value,
         moisPaiement: avecMois() ? [...moisChoisis].sort((a, b) => a - b).join(',') : '',
-        dateReference: periodique(freq.value) ? ref.value : '', historique: JSON.stringify(h2),
+        dateReference: periodique(freq.value) ? ref.value : String(j), historique: JSON.stringify(h2),
         motsCles: motsCles.value.split(',').map(normaliser).filter(Boolean).join('|'), actif: actif.checked };
       await sauver('DepensesFixes', rec);
       E.fixes = E.fixes.filter(x => x.id !== rec.id).concat(rec);
@@ -299,7 +306,7 @@ function modifierFixe(f, rafraichir) {
       fermer(); rafraichir(); toast('Dépense fixe enregistrée ✓');
     } },
       champ('Nom', nom), champ('Catégorie', cat),
-      champ('Fréquence', freq), zoneRef, zoneMois,
+      champ('Fréquence', freq), zoneRef, zoneMois, zoneJour,
       champ(periodique(f.frequence) ? 'Montant par paiement' : 'Montant par défaut', montant, 'Modifiable pour un paiement précis dans l\'écran Mouvements.'),
       nouveau ? null : champ('Ce montant s\'applique à partir du', aPartirDu, 'Les paiements avant cette date gardent l\'ancien montant.'),
       histTexte,

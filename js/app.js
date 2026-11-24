@@ -1,5 +1,5 @@
 // Point d'entrée : démarrage, verrou, navigation et écrans Accueil / Transactions / Année.
-import { h, vider, toast } from './ui.js';
+import { h, vider, toast, fermerDerniere } from './ui.js';
 import { surChangement, getMeta } from './db.js';
 import { E, charger, initialiserSiVide, materialiser, donneesCalc, icone, revenusAConfirmer, reglage } from './etat.js';
 import { calculerMois, calculerAnnee, argent, moisCourant, decalerMois, nomMois, nomMoisCourt } from './calc.js';
@@ -29,10 +29,13 @@ async function apresDeverrouillage() {
   if (!dejaDemarre) {
     dejaDemarre = true;
     surveillerArrierePlan(() => { deverrouille = false; ecranVerrou(); });
+    installerRetour();
     surChangement(async () => { await charger(); await materialiser(); if (deverrouille) dessiner(); });
     await materialiser();
     await charger();
     demarrerSyncAuto();
+  } else if (!history.state || history.state.budget !== 'tampon') {
+    history.pushState({ budget: 'tampon' }, ''); // réarme le bouton retour après un reverrouillage
   }
   dessiner();
 }
@@ -89,7 +92,44 @@ async function ecranVerrou() {
 }
 
 // ------------------------------------------------------------------ navigation
-function aller(ecran, options = {}) { Object.assign(vue, { ecran, filtre: null, recherche: null }, options); dessiner(); window.scrollTo(0, 0); }
+// Écrans visités, pour que le bouton « retour » du téléphone revienne en arrière.
+const precedents = [];
+function aller(ecran, options = {}) {
+  if (ecran !== vue.ecran || options.filtre) {
+    precedents.push({ ecran: vue.ecran, mois: vue.mois, filtre: vue.filtre });
+    if (precedents.length > 30) precedents.shift();
+  }
+  Object.assign(vue, { ecran, filtre: null, recherche: null }, options); dessiner(); window.scrollTo(0, 0);
+}
+
+/**
+ * Bouton « retour » d'Android : sans historique, il ferme l'app. On garde donc une page « tampon »
+ * dans l'historique du navigateur. Chaque retour est intercepté :
+ * 1) ferme la fenêtre ouverte (formulaire, photo…) ; 2) sinon ferme la recherche ;
+ * 3) sinon revient à l'écran précédent ; 4) sinon revient à l'Accueil ;
+ * 5) sur l'Accueil : « Appuie encore sur retour pour quitter ».
+ */
+let pretAQuitter = false;
+function installerRetour() {
+  history.replaceState({ budget: 'base' }, '');
+  history.pushState({ budget: 'tampon' }, '');
+  window.addEventListener('popstate', () => {
+    if (!deverrouille) return; // écran de verrouillage : comportement normal
+    if (pretAQuitter) { history.back(); return; } // page plus ancienne (après un rechargement) : on continue de reculer
+    if (fermerDerniere()) { /* fenêtre fermée */ }
+    else if (vue.recherche) { vue.recherche = null; dessiner(); }
+    else if (precedents.length) { Object.assign(vue, precedents.pop(), { recherche: null }); dessiner(); window.scrollTo(0, 0); }
+    else if (vue.ecran !== 'accueil') { Object.assign(vue, { ecran: 'accueil', filtre: null, recherche: null }); dessiner(); window.scrollTo(0, 0); }
+    else {
+      // Accueil : on reste sur la page de base, donc le prochain « retour » ferme l'app.
+      pretAQuitter = true;
+      toast('Appuie encore sur retour pour quitter', 'info');
+      setTimeout(() => { pretAQuitter = false; history.pushState({ budget: 'tampon' }, ''); }, 2500);
+      return;
+    }
+    history.pushState({ budget: 'tampon' }, '');
+  });
+}
 
 function barreNav() {
   const item = (id, ic, txt) => h('button', { class: 'nav-item' + (vue.ecran === id ? ' actif' : ''), onclick: () => aller(id), 'aria-label': txt },

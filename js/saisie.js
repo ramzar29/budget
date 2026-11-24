@@ -1,5 +1,5 @@
 // Saisie et modification des dépenses / revenus, liste des transactions, confirmation des paies.
-import { h, feuille, toast, confirmer, champ, champMontant, lireMontant } from './ui.js';
+import { h, feuille, toast, confirmer, champ, champMontant, lireMontant, ajouterFermable } from './ui.js';
 import { E, categoriesPar, categoriePour, enregistrerFacture, fixeCorrespondant, icone, revenusAConfirmer, donneesCalc } from './etat.js';
 import { sauver, supprimer } from './db.js';
 import { argent, arrondi, aujourdhui, nomMois, calculerMois, versDate, historiqueMontantDe, montantModifie, normaliser } from './calc.js';
@@ -184,8 +184,10 @@ export function ouvrirSaisie({ type = 'depense', lignesExistantes = null, prerem
 function voirImage(url) {
   const img = h('img', { src: url, alt: 'Facture' });
   const zone = h('div', { class: 'visionneuse-zone' }, img);
+  const fermer = () => { retirer(); fond.remove(); };
+  const retirer = ajouterFermable(fermer); // le bouton « retour » du téléphone la ferme aussi
   const fond = h('div', { class: 'visionneuse' }, zone,
-    h('button', { type: 'button', class: 'visionneuse-fermer', 'aria-label': 'Fermer', onclick: () => fond.remove() }, '✕'),
+    h('button', { type: 'button', class: 'visionneuse-fermer', 'aria-label': 'Fermer', onclick: fermer }, '✕'),
     h('p', { class: 'visionneuse-aide' }, 'Touche l\'image pour zoomer'));
   img.addEventListener('click', ev => {
     const zoom = !fond.classList.contains('zoom');
