@@ -95,7 +95,7 @@ function barreNav() {
   const item = (id, ic, txt) => h('button', { class: 'nav-item' + (vue.ecran === id ? ' actif' : ''), onclick: () => aller(id), 'aria-label': txt },
     h('span', { class: 'nav-ic' }, ic), h('span', {}, txt));
   return h('nav', { class: 'barre-nav' },
-    item('accueil', '🏠', 'Accueil'), item('transactions', '📋', 'Entrées'),
+    item('accueil', '🏠', 'Accueil'), item('transactions', '📋', 'Mouvements'),
     h('button', { class: 'fab', 'aria-label': 'Ajouter', onclick: () => ouvrirAjout(ouvrirPhoto) }, '＋'),
     item('annee', '📅', 'Année'), item('reglages', '⚙️', 'Réglages'));
 }
@@ -132,7 +132,7 @@ async function dessiner() {
     const actif = document.activeElement && document.activeElement.id === 'recherche-texte'
       ? { debut: document.activeElement.selectionStart, fin: document.activeElement.selectionEnd } : null;
     vider(racine).append(
-      h('header', { class: 'entete' }, h('h1', {}, { accueil: 'Budget', transactions: 'Entrées', annee: 'Année', reglages: 'Réglages' }[vue.ecran]), indicateurSync),
+      h('header', { class: 'entete' }, h('h1', {}, { accueil: 'Budget', transactions: 'Mouvements', annee: 'Année', reglages: 'Réglages' }[vue.ecran]), indicateurSync),
       h('main', { class: 'contenu' }, contenu),
       barreNav());
     if (actif) {
@@ -186,7 +186,21 @@ function ecranAccueil() {
         : h('p', { class: 'vide' }, 'Aucune dépense ce mois-ci. Appuie sur ＋ pour en ajouter une.')));
 }
 
-// ------------------------------------------------------------------ Entrées (+ recherche)
+// ------------------------------------------------------------------ Mouvements du mois (+ recherche)
+// Cases « Fixes et paies » / « Saisis par moi » : mémorisées sur cet appareil.
+const voir = (() => {
+  try { const v = JSON.parse(localStorage.getItem('voirMouvements')); if (v && typeof v.fixes === 'boolean') return v; } catch {}
+  return { fixes: true, saisis: true };
+})();
+function caseVoir(cle, texte, classe) {
+  return h('label', { class: 'case-voir ' + classe },
+    h('input', { type: 'checkbox', checked: voir[cle], onchange: e => {
+      voir[cle] = e.target.checked;
+      try { localStorage.setItem('voirMouvements', JSON.stringify(voir)); } catch {}
+      dessiner();
+    } }), texte);
+}
+
 function ecranEntrees() {
   const loupe = h('button', {
     class: 'btn-icone loupe' + (vue.recherche ? ' actif' : ''), 'aria-label': vue.recherche ? 'Fermer la recherche' : 'Rechercher',
@@ -196,8 +210,11 @@ function ecranEntrees() {
   if (!vue.recherche) {
     return h('div', {},
       h('div', { class: 'outils-entrees' }, selecteurMois(), loupe),
+      h('div', { class: 'cases-voir' },
+        caseVoir('fixes', '📌 Fixes et paies', 'fixe'),
+        caseVoir('saisis', '✍️ Saisis par moi', 'saisi')),
       vue.filtre ? h('button', { class: 'puce filtre', onclick: () => { vue.filtre = null; dessiner(); } }, `${icone(vue.filtre)} ${vue.filtre} ✕`) : null,
-      ecranTransactions(vue.mois, vue.filtre));
+      ecranTransactions(vue.mois, vue.filtre, voir));
   }
 
   const r = vue.recherche;
@@ -209,7 +226,7 @@ function ecranEntrees() {
   function remplirCategories() {
     const types = r.type === 'tout' ? ['depense', 'revenu'] : [r.type];
     const noms = [...new Set(E.categories.filter(c => types.includes(c.type)).map(c => c.categorie))];
-    // Catégories utilisées dans des entrées mais retirées de la liste : les garder cherchables.
+    // Catégories utilisées dans des mouvements mais retirées de la liste : les garder cherchables.
     for (const t of E.transactions) if (!t.supprime && types.includes(t.type) && t.categorie && !noms.includes(t.categorie)) noms.push(t.categorie);
     categorie.replaceChildren(h('option', { value: '' }, 'Toutes les catégories'),
       ...noms.sort((a, b) => a.localeCompare(b, 'fr')).map(n => h('option', { value: n }, `${icone(n)} ${n}`)));
@@ -232,7 +249,7 @@ function ecranEntrees() {
   majResultats();
 
   return h('div', {},
-    h('div', { class: 'outils-entrees' }, h('h3', { class: 'titre-recherche' }, '🔍 Recherche dans toutes les entrées'), loupe),
+    h('div', { class: 'outils-entrees' }, h('h3', { class: 'titre-recherche' }, '🔍 Recherche dans tous les mouvements'), loupe),
     h('section', { class: 'carte recherche' },
       h('label', { class: 'champ' }, h('span', { class: 'etiquette' }, 'Item(s) à rechercher'), type),
       h('label', { class: 'champ' }, h('span', { class: 'etiquette' }, 'Catégorie'), categorie),

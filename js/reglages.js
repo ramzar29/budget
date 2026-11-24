@@ -65,7 +65,7 @@ export async function ecranReglages(rafraichir) {
     rangee('Catégories de revenus', `${categoriesPar('revenu').size} catégories`, () => gererCategories('revenu', rafraichir)),
     rangee('Commerces connus', `${E.commerces.length} commerces`, () => gererCommerces(rafraichir))));
 
-  racine.append(h('p', { class: 'aide centre' }, 'Budget · v3'));
+  racine.append(h('p', { class: 'aide centre' }, 'Budget · v4'));
   return racine;
 }
 
@@ -300,7 +300,7 @@ function modifierFixe(f, rafraichir) {
     } },
       champ('Nom', nom), champ('Catégorie', cat),
       champ('Fréquence', freq), zoneRef, zoneMois,
-      champ(periodique(f.frequence) ? 'Montant par paiement' : 'Montant par défaut', montant, 'Modifiable pour un paiement précis dans la liste des entrées.'),
+      champ(periodique(f.frequence) ? 'Montant par paiement' : 'Montant par défaut', montant, 'Modifiable pour un paiement précis dans l\'écran Mouvements.'),
       nouveau ? null : champ('Ce montant s\'applique à partir du', aPartirDu, 'Les paiements avant cette date gardent l\'ancien montant.'),
       histTexte,
       champ('Mots-clés de la facture (facultatif)', motsCles, 'Si une facture contient un de ces mots, l\'app proposera de remplacer cette dépense fixe.'),

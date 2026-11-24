@@ -211,12 +211,17 @@ export function ouvrirAjout(ouvrirPhoto) {
 }
 
 /** Liste des transactions d'un mois (regroupées par facture). */
-export function ecranTransactions(moisTxt, filtreCategorie = null) {
+/** Mouvement automatique : dépense fixe ou paie / revenu récurrent (fond pâle dans la liste). */
+export const estFixe = t => ['fixe', 'paie', 'revenu-recurrent'].includes(t.source);
+
+/** Mouvements d'un mois. voir = { fixes, saisis } : quels types de mouvements afficher. */
+export function ecranTransactions(moisTxt, filtreCategorie = null, voir = { fixes: true, saisis: true }) {
+  if (!voir.fixes && !voir.saisis) return h('p', { class: 'vide' }, 'Coche au moins une case ci-dessus.');
   const res = calculerMois(donneesCalc(), moisTxt);
-  let lignes = res.lignes;
+  let lignes = res.lignes.filter(l => estFixe(l) ? voir.fixes : voir.saisis);
   if (filtreCategorie) lignes = lignes.filter(l => l.categorie === filtreCategorie);
   const groupes = grouper(lignes);
-  if (!groupes.length) return h('p', { class: 'vide' }, 'Aucune entrée pour ce mois.');
+  if (!groupes.length) return h('p', { class: 'vide' }, 'Aucun mouvement pour ce mois.');
   return listeEntrees(groupes);
 }
 
@@ -231,7 +236,7 @@ function grouper(lignes) {
 }
 
 /**
- * Recherche dans toutes les entrées du fichier.
+ * Recherche dans tous les mouvements du fichier.
  * criteres = { type: 'tout' | 'revenu' | 'depense', categorie: '' | nom, texte }
  */
 export function rechercherEntrees({ type = 'tout', categorie = '', texte = '' }) {
@@ -270,7 +275,7 @@ export function listeEntrees(groupes, { avecAnnee = false } = {}) {
     const prevu = p.statut === 'prevu';
     const sousTitre = g.length > 1 ? `${g.length} catégories` : `${p.categorie}${p.sousCategorie ? ' › ' + p.sousCategorie : ''}`;
     liste.append(h('li', {
-      class: 'tx' + (prevu ? ' prevu' : ''),
+      class: 'tx' + (prevu ? ' prevu' : '') + (estFixe(p) ? ' fixe' : ''),
       onclick: () => {
         if (virtuelle) return toast('Prévu — modifie le modèle dans Réglages', 'info');
         const tout = E.transactions.filter(t => !t.supprime && (t.factureId || t.id) === (p.factureId || p.id));
