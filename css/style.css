@@ -1,7 +1,7 @@
 :root {
   --fond: #f4f6f5; --carte: #ffffff; --texte: #1b2420; --doux: #5f6b66; --ligne: #e2e7e4;
   --accent: #1f6f5c; --accent-doux: #dcefe9; --positif: #1d8a4e; --negatif: #c8372d;
-  --positif-fond: #e3f4ea; --negatif-fond: #fbe6e4; --attente: #a86b00; --mauve: #7b3fbf;
+  --positif-fond: #e3f4ea; --negatif-fond: #fbe6e4; --attente: #a86b00; --mauve: #7b3fbf; --fixe-fond: #fdf6e3; --fixe-bord: #ecdcb0;
   --ombre: 0 1px 3px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.05);
   --rayon: 14px;
   color-scheme: light;
@@ -10,7 +10,7 @@
   :root {
     --fond: #111614; --carte: #1b211f; --texte: #e8eeeb; --doux: #9aa6a1; --ligne: #2b3431;
     --accent: #4fbf9f; --accent-doux: #1d3530; --positif: #4cc782; --negatif: #ff7a6e;
-    --positif-fond: #17301f; --negatif-fond: #3a1d1a; --attente: #f0b54a; --mauve: #c39bf2;
+    --positif-fond: #17301f; --negatif-fond: #3a1d1a; --attente: #f0b54a; --mauve: #c39bf2; --fixe-fond: #2a261b; --fixe-bord: #4a4230;
     --ombre: none; color-scheme: dark;
   }
 }
@@ -223,3 +223,12 @@ input.montant { font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabul
 .loupe.actif { background: var(--accent-doux); color: var(--accent); }
 .titre-recherche { flex: 1; margin: 10px 0; font-size: 1rem; }
 .carte.recherche { display: flex; flex-direction: column; gap: 12px; }
+
+/* ---- Mouvements : fixes et paies sur fond pâle, cases à cocher */
+.tx.fixe { background: var(--fixe-fond); }
+.tx.fixe.prevu { border-color: var(--fixe-bord); }
+.cases-voir { display: flex; gap: 8px; margin: 2px 0 10px; }
+.case-voir { flex: 1; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--ligne); background: var(--carte); font-size: .88rem; font-weight: 600; cursor: pointer; }
+.case-voir.fixe { background: var(--fixe-fond); border-color: var(--fixe-bord); }
+.case-voir input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
