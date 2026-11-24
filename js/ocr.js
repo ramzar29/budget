@@ -1,5 +1,5 @@
 // Photo d'une facture -> lecture du texte (Tesseract.js, gratuit, sur le téléphone) -> formulaire prérempli.
-// La photo n'est jamais conservée : elle reste en mémoire le temps de la lecture, puis est jetée.
+// La photo n'est jamais conservée : elle reste en mémoire le temps de la saisie (miniature), puis est jetée.
 import { h, feuille, toast } from './ui.js';
 import { ouvrirSaisie } from './saisie.js';
 import { E } from './etat.js';
@@ -52,19 +52,36 @@ async function preparerImage(fichier) {
   return canvas;
 }
 
+/** Choix : prendre une photo avec l'appareil, ou choisir une image (capture d'écran, photo déjà prise). */
 export function ouvrirPhoto() {
+  feuille('Photo d\'une facture', (corps, fermer) => {
+    corps.append(
+      h('div', { class: 'grille-choix deux' },
+        h('button', { class: 'choix', onclick: () => { choisirFichier(true); fermer(); } }, h('span', { class: 'gros' }, '📷'), 'Prendre une photo'),
+        h('button', { class: 'choix', onclick: () => { choisirFichier(false); fermer(); } }, h('span', { class: 'gros' }, '🖼️'), 'Choisir une image')),
+      h('p', { class: 'rappel-rouge' }, '⚠️ Les PDF ne sont pas acceptés : seulement une capture d\'écran ou une image (JPG, PNG…).'));
+  });
+}
+
+function choisirFichier(camera) {
   // Le clic sur le champ fichier doit se faire pendant le geste de l'utilisateur.
-  const entree = h('input', { type: 'file', accept: 'image/*', capture: 'environment', style: { display: 'none' } });
+  const entree = h('input', { type: 'file', accept: 'image/*', capture: camera ? 'environment' : null, style: { display: 'none' } });
   document.body.append(entree);
   entree.addEventListener('change', () => {
     const fichier = entree.files && entree.files[0];
     entree.remove();
-    if (fichier) lire(fichier);
+    if (!fichier) return;
+    if (!fichier.type.startsWith('image/')) {
+      return toast(fichier.type === 'application/pdf' ? 'PDF refusé : fais une capture d\'écran de la facture.' : 'Ce fichier n\'est pas une image.', 'erreur');
+    }
+    lire(fichier);
   });
   entree.click();
 }
 
 async function lire(fichier) {
+  // Aperçu en mémoire seulement (jamais enregistré) ; libéré à la fermeture du formulaire.
+  const image = URL.createObjectURL(fichier);
   let fermerAttente;
   const statut = h('p', { class: 'aide centre' }, 'Préparation de l\'image…');
   const barre = h('div', { class: 'barre' }, h('span', { style: { width: '5%', background: 'var(--accent)' } }));
@@ -94,13 +111,13 @@ async function lire(fichier) {
     toast(trouves.length ? `Lu : ${trouves.join(', ')}. Vérifie avant d'enregistrer.` : 'Rien de lisible — entre les valeurs à la main.', trouves.length ? 'info' : 'erreur');
     ouvrirSaisie({
       type: 'depense', source: 'photo',
-      prerempli: { montant: resultat.montant, date: resultat.date, commerce: resultat.commerce, lu: true, texte: data.text }
+      prerempli: { montant: resultat.montant, date: resultat.date, commerce: resultat.commerce, lu: true, texte: data.text, image }
     });
   } catch (e) {
     console.warn('ocr', e);
     fermerAttente && fermerAttente();
     toast(e.message === 'telechargement' ? 'Module de lecture indisponible (pas de réseau ?). Saisie manuelle.' : 'Lecture impossible. Saisie manuelle.', 'erreur');
-    ouvrirSaisie({ type: 'depense', source: 'manuelle' });
+    ouvrirSaisie({ type: 'depense', source: 'manuelle', prerempli: { image } });
   } finally {
     if (worker) worker.terminate().catch(() => {});
   }

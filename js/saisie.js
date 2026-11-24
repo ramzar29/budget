@@ -2,7 +2,7 @@
 import { h, feuille, toast, confirmer, champ, champMontant, lireMontant } from './ui.js';
 import { E, categoriesPar, categoriePour, enregistrerFacture, fixeCorrespondant, icone, revenusAConfirmer, donneesCalc } from './etat.js';
 import { sauver, supprimer } from './db.js';
-import { argent, arrondi, aujourdhui, nomMois, calculerMois, versDate } from './calc.js';
+import { argent, arrondi, aujourdhui, nomMois, calculerMois, versDate, historiqueMontantDe, montantModifie, normaliser } from './calc.js';
 import { synchroniserBientot } from './sync.js';
 
 const SEP = '¦';
@@ -38,6 +38,11 @@ export function ouvrirSaisie({ type = 'depense', lignesExistantes = null, prerem
   const principale = lignesTriees[0];
   const titre = edition ? (type === 'revenu' ? 'Modifier le revenu' : 'Modifier la dépense')
     : (type === 'revenu' ? 'Nouveau revenu' : 'Nouvelle dépense');
+
+  // Marqueur mauve : seulement pour une dépense non fixe déjà enregistrée.
+  const suivreMontant = edition && type === 'depense' && principale.source !== 'fixe';
+  const totalAvant = edition ? arrondi(lignesTriees.reduce((s, l) => s + Number(l.montant), 0)) : 0;
+  const chaineAvant = edition ? historiqueMontantDe(lignesTriees.find(l => historiqueMontantDe(l).length) || {}) : [];
 
   feuille(titre, (corps, fermer) => {
     let categorieTouchee = edition;
@@ -122,10 +127,17 @@ export function ouvrirSaisie({ type = 'depense', lignesExistantes = null, prerem
           remplaceFixeId = fx.id;
         }
       }
+      // Historique du total : [origine, ..., actuel]. Retour au montant d'origine = plus de marqueur.
+      let chaine = suivreMontant ? chaineAvant : [];
+      if (suivreMontant && arrondi(t) !== totalAvant) {
+        chaine = chaine.length ? [...chaine] : [totalAvant];
+        if (arrondi(t) === chaine[0]) chaine = [];
+        else chaine.push(arrondi(t));
+      }
       await enregistrerFacture({
         factureId: principale?.factureId, date: date.value, commerce: commerce.value.trim(), type, lignes,
         source: principale?.source || source, note: note.value.trim(), remplaceFixeId,
-        anciennesLignes: lignesExistantes || []
+        anciennesLignes: lignesExistantes || [], historiqueMontant: chaine.length >= 2 ? JSON.stringify(chaine) : ''
       });
       fermer();
       toast(edition ? 'Modification enregistrée ✓' : `${type === 'revenu' ? 'Revenu' : 'Dépense'} de ${argent(t)} enregistré${type === 'revenu' ? '' : 'e'} ✓`);
@@ -144,9 +156,14 @@ export function ouvrirSaisie({ type = 'depense', lignesExistantes = null, prerem
 
     const texteLu = prerempli.texte ? h('details', { class: 'texte-lu' }, h('summary', {}, 'Voir le texte lu sur la photo'),
       h('pre', {}, prerempli.texte)) : null;
+    const historiqueTxt = suivreMontant && chaineAvant.length >= 2
+      ? h('small', { class: 'montant-modifie' }, `Montant modifié — origine : ${chaineAvant.map(argent).join(' → ')}`) : null;
+    const miniature = prerempli.image ? h('button', { type: 'button', class: 'miniature', 'aria-label': 'Voir la facture en grand',
+      onclick: () => voirImage(prerempli.image) }, h('img', { src: prerempli.image, alt: 'Facture' }), h('span', {}, '🔍 Toucher pour agrandir')) : null;
     const form = h('form', { class: 'formulaire', onsubmit: enregistrer },
+      miniature,
       prerempli.lu ? h('p', { class: 'bandeau-lu' }, '📷 Valeurs lues sur la photo — vérifie-les et corrige au besoin.') : null,
-      champ('Montant total', total),
+      h('label', { class: 'champ' }, h('span', { class: 'etiquette' }, 'Montant total', historiqueTxt ? ' ' : null, historiqueTxt), total),
       champ(type === 'revenu' ? 'Provenance' : 'Commerce', commerce), datalist,
       champ('Catégorie', catPrincipale), suggestion,
       type === 'depense' ? h('div', {}, zoneSeparee, reste,
@@ -160,7 +177,27 @@ export function ouvrirSaisie({ type = 'depense', lignesExistantes = null, prerem
       texteLu);
     corps.append(form);
     if (!edition && !prerempli.montant) setTimeout(() => total.focus(), 250);
+  }, { surFermer: () => { if (prerempli.image) URL.revokeObjectURL(prerempli.image); } }); // l'image est jetée
+}
+
+/** Affiche la facture en plein écran : toucher pour zoomer, glisser pour se déplacer. */
+function voirImage(url) {
+  const img = h('img', { src: url, alt: 'Facture' });
+  const zone = h('div', { class: 'visionneuse-zone' }, img);
+  const fond = h('div', { class: 'visionneuse' }, zone,
+    h('button', { type: 'button', class: 'visionneuse-fermer', 'aria-label': 'Fermer', onclick: () => fond.remove() }, '✕'),
+    h('p', { class: 'visionneuse-aide' }, 'Touche l\'image pour zoomer'));
+  img.addEventListener('click', ev => {
+    const zoom = !fond.classList.contains('zoom');
+    const r = img.getBoundingClientRect();
+    const px = (ev.clientX - r.left) / r.width, py = (ev.clientY - r.top) / r.height;
+    fond.classList.toggle('zoom', zoom);
+    if (zoom) requestAnimationFrame(() => {
+      zone.scrollLeft = px * img.offsetWidth - zone.clientWidth / 2;
+      zone.scrollTop = py * img.offsetHeight - zone.clientHeight / 2;
+    });
   });
+  document.body.append(fond);
 }
 
 /** Choix du type d'ajout (bouton ➕). */
@@ -178,18 +215,50 @@ export function ecranTransactions(moisTxt, filtreCategorie = null) {
   const res = calculerMois(donneesCalc(), moisTxt);
   let lignes = res.lignes;
   if (filtreCategorie) lignes = lignes.filter(l => l.categorie === filtreCategorie);
+  const groupes = grouper(lignes);
+  if (!groupes.length) return h('p', { class: 'vide' }, 'Aucune entrée pour ce mois.');
+  return listeEntrees(groupes);
+}
+
+function grouper(lignes) {
   const factures = new Map();
   for (const l of lignes) {
     const k = l.factureId || l.id;
     if (!factures.has(k)) factures.set(k, []);
     factures.get(k).push(l);
   }
-  const groupes = [...factures.values()].sort((a, b) => b[0].date.localeCompare(a[0].date) || (b[0].modifieLe || '').localeCompare(a[0].modifieLe || ''));
-  if (!groupes.length) return h('p', { class: 'vide' }, 'Aucune entrée pour ce mois.');
+  return [...factures.values()].sort((a, b) => b[0].date.localeCompare(a[0].date) || (b[0].modifieLe || '').localeCompare(a[0].modifieLe || ''));
+}
 
+/**
+ * Recherche dans toutes les entrées du fichier.
+ * criteres = { type: 'tout' | 'revenu' | 'depense', categorie: '' | nom, texte }
+ */
+export function rechercherEntrees({ type = 'tout', categorie = '', texte = '' }) {
+  let lignes = E.transactions.filter(t => !t.supprime);
+  if (type !== 'tout') lignes = lignes.filter(t => t.type === type);
+  if (categorie) lignes = lignes.filter(t => t.categorie === categorie);
+  let groupes = grouper(lignes);
+  const q = normaliser(texte);
+  if (q) {
+    const chiffres = q.replace(/[\s$]/g, '').replace(',', '.');
+    const estMontant = /^\d+(\.\d{0,2})?$/.test(chiffres);
+    const correspond = g => {
+      const total = arrondi(g.reduce((s, l) => s + Number(l.montant), 0));
+      if (estMontant && [total, ...g.map(l => Number(l.montant))].some(m => m.toFixed(2).startsWith(chiffres))) return true;
+      return g.some(l => normaliser([l.commerce, l.note, l.categorie, l.sousCategorie, l.saisiPar].join(' ')).includes(q));
+    };
+    groupes = groupes.filter(correspond);
+  }
+  return groupes;
+}
+
+export function listeEntrees(groupes, { avecAnnee = false } = {}) {
   const liste = h('ul', { class: 'liste-tx' });
   let dateCourante = null;
-  const fmtDate = new Intl.DateTimeFormat('fr-CA', { weekday: 'long', day: 'numeric', month: 'long' });
+  const fmtDate = new Intl.DateTimeFormat('fr-CA', avecAnnee
+    ? { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }
+    : { weekday: 'long', day: 'numeric', month: 'long' });
   for (const g of groupes) {
     if (g[0].date !== dateCourante) {
       dateCourante = g[0].date;
@@ -215,8 +284,9 @@ export function ecranTransactions(moisTxt, filtreCategorie = null) {
           p.source === 'fixe' ? ' · 📌 fixe' : '',
           prevu ? ' · prévu' : '',
           p.saisiPar && E.moi && p.saisiPar !== E.moi ? ` · ${p.saisiPar}` : '')),
-      h('span', { class: 'tx-montant ' + (p.type === 'revenu' ? 'positif' : '') },
-        (p.type === 'revenu' ? '+ ' : '') + argent(total))));
+      h('span', { class: 'tx-montant ' + (p.type === 'revenu' ? 'positif' : '') + (g.some(montantModifie) ? ' modifie' : ''),
+        title: g.some(montantModifie) ? 'Montant modifié après l\'enregistrement' : null },
+        (p.type === 'revenu' ? '+ ' : '') + argent(total) + (g.some(montantModifie) ? ' *' : ''))));
   }
   return liste;
 }

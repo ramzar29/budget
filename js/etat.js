@@ -1,7 +1,7 @@
 // Données chargées en mémoire et opérations métier (sauvegarde, apprentissage, matérialisation).
 import { tous, sauver, ecrireBrut, getMeta, uuid } from './db.js';
 import { categoriesDeDepart, commercesDeDepart, EPOQUE, ICONES } from './defaults.js';
-import { moisCourant, occurrencesAMaterialiser, normaliser, trouverCommerce, montantA, datesRevenu, fixeDansLeMois, aujourdhui, decalerMois } from './calc.js';
+import { moisCourant, occurrencesAMaterialiser, normaliser, trouverCommerce, montantA, datesRevenu, datesFixe, idFixe, montantFixe, aujourdhui, decalerMois } from './calc.js';
 import { synchroniserBientot } from './sync.js';
 
 export const E = {
@@ -92,7 +92,7 @@ async function apprendreCommerce(nom, categorie, sousCategorie) {
  * Enregistre une facture (une ou plusieurs lignes séparées) ou un revenu.
  * lignes = [{ categorie, sousCategorie, montant }]
  */
-export async function enregistrerFacture({ factureId, date, commerce, type, lignes, source, note, remplaceFixeId, anciennesLignes = [] }) {
+export async function enregistrerFacture({ factureId, date, commerce, type, lignes, source, note, remplaceFixeId, anciennesLignes = [], historiqueMontant = '' }) {
   const fid = factureId || uuid();
   const mois = date.slice(0, 7);
   const saisiPar = E.moi;
@@ -101,12 +101,13 @@ export async function enregistrerFacture({ factureId, date, commerce, type, lign
     factureId: (remplaceFixeId && lignes.length === 1) ? remplaceFixeId : fid,
     date, mois, type, categorie: l.categorie, sousCategorie: l.sousCategorie || '',
     commerce: commerce || '', montant: l.montant, source: source || 'manuelle',
-    refId: l.refId || '', statut: 'confirme', saisiPar: l.saisiPar || saisiPar, note: note || ''
+    refId: l.refId || '', statut: 'confirme', saisiPar: l.saisiPar || saisiPar, note: note || '',
+    historiqueMontant: historiqueMontant || ''
   }));
   if (remplaceFixeId) {
     const ancien = E.transactions.find(t => t.id === remplaceFixeId);
-    if (ancien) { recs[0].refId = ancien.refId; recs[0].source = 'fixe'; }
-    else { const fx = remplaceFixeId.match(/^fixe-(.+)-\d{4}-\d{2}$/); if (fx) { recs[0].refId = fx[1]; recs[0].source = 'fixe'; } }
+    const fx = ancien ? null : E.fixes.find(f => remplaceFixeId.startsWith(`fixe-${f.id}-`));
+    if (ancien || fx) { recs[0].refId = ancien ? ancien.refId : fx.id; recs[0].source = 'fixe'; recs[0].historiqueMontant = ''; }
   }
   await sauver('Transactions', recs);
   // Lignes retirées lors d'une modification
@@ -122,16 +123,20 @@ export async function enregistrerFacture({ factureId, date, commerce, type, lign
 export function fixeCorrespondant(date, commerce, categorie, sousCategorie) {
   const mois = date.slice(0, 7);
   const n = normaliser(commerce);
+  const ecart = d => Math.abs(new Date(d) - new Date(date));
   for (const f of E.fixes) {
     if (f.actif === false) continue;
-    const id = `fixe-${f.id}-${mois}`;
-    const existant = E.transactions.find(t => t.id === id);
-    if (existant && (existant.supprime || existant.statut === 'confirme')) continue;
     const memeCat = f.categorie === categorie && (f.sousCategorie || '') === (sousCategorie || '');
     const motCle = n && String(f.motsCles || '').split(/[|,]/).map(normaliser).filter(Boolean).some(k => n.includes(k));
-    const dansLeMois = existant || fixeDansLeMois(f, mois);
-    if (dansLeMois && (memeCat || motCle)) {
-      return { fixe: f, id, montant: existant ? Number(existant.montant) : Number(f.montant) };
+    if (!memeCat && !motCle) continue;
+    // Paiements du mois encore prévus (pour un paiement hebdomadaire : le plus proche de la date de la facture).
+    const candidats = datesFixe(f, mois).map(d => ({ d, id: idFixe(f, d) }))
+      .map(c => ({ ...c, existant: E.transactions.find(t => t.id === c.id) }))
+      .filter(c => !(c.existant && (c.existant.supprime || c.existant.statut === 'confirme')))
+      .sort((a, b) => ecart(a.d) - ecart(b.d));
+    if (candidats.length) {
+      const c = candidats[0];
+      return { fixe: f, id: c.id, montant: c.existant ? Number(c.existant.montant) : montantFixe(f, c.d) };
     }
   }
   return null;
@@ -157,17 +162,25 @@ export function revenusAConfirmer() {
 /**
  * Après une modification (ou suppression) d'un revenu récurrent ou d'une dépense fixe :
  * met à jour les occurrences encore « prévues » (non confirmées) qui en découlent.
+ * Les mois passés ne sont pas réécrits : seul leur montant suit l'historique
+ * (« Ce montant s'applique à partir du… »), donc ils gardent l'ancien montant.
  */
 export async function rafraichirPrevus(refId) {
   const rev = E.revenus.find(r => r.id === refId);
   const fx = E.fixes.find(f => f.id === refId);
+  const courant = moisCourant();
   const maj = [];
   for (const t of E.transactions) {
     if (t.supprime || t.statut !== 'prevu' || t.refId !== refId) continue;
+    if (t.mois < courant) {
+      const m = rev ? montantA(rev, t.date) : fx ? montantFixe(fx, t.date) : null;
+      if (m !== null && m !== Number(t.montant)) maj.push({ ...t, montant: m });
+      continue;
+    }
     const valide = rev ? datesRevenu(rev, t.mois).includes(t.date)
-      : fx ? fixeDansLeMois(fx, t.mois) : false; // modèle supprimé -> occurrence retirée
+      : fx ? datesFixe(fx, t.mois).some(d => idFixe(fx, d) === t.id) : false; // modèle supprimé -> occurrence retirée
     if (!valide) { maj.push({ ...t, supprime: true }); continue; }
-    const montant = rev ? montantA(rev, t.date) : (Number(fx.montant) || 0);
+    const montant = rev ? montantA(rev, t.date) : montantFixe(fx, t.date);
     const nom = rev ? rev.nom : fx.nom;
     const categorie = rev ? (rev.categorie || 'Salaire') : fx.categorie;
     const sousCategorie = rev ? (rev.sousCategorie || 'Paie') : fx.sousCategorie;

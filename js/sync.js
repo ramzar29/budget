@@ -72,7 +72,8 @@ export async function synchroniser() {
         if (!distant.id) continue;
         const local = locaux.get(distant.id);
         if (local && local._sale && (local.modifieLe || '') > (distant.modifieLe || '')) continue;
-        const rec = { ...distant, supprime: distant.supprime === true, _sale: false };
+        // On part du local : une colonne absente du Sheet (script pas encore à jour) n'efface rien.
+        const rec = { ...(local || {}), ...distant, supprime: distant.supprime === true, _sale: false };
         if (t === 'Transactions' && rec.date && !rec.mois) rec.mois = String(rec.date).slice(0, 7);
         aEcrire.push(rec);
       }

@@ -34,21 +34,32 @@ export function montantA(rev, date) {
   return Number(m) || 0;
 }
 
+export const periodique = freq => freq === 'hebdo' || freq === '2sem';
+
+/** Dates d'un paiement aux 7 ou 14 jours (à partir d'une date connue) dans un mois donné. */
+function datesPeriodiques(dateReference, frequence, moisTxt) {
+  const ref = versDate(dateReference);
+  const debut = versDate(moisTxt + '-01');
+  const fin = finDuMois(moisTxt);
+  const pas = frequence === 'hebdo' ? 7 : 14;
+  const dates = [];
+  const d = new Date(ref);
+  if (d < debut) {
+    const jours = Math.round((debut - d) / 86400000);
+    d.setDate(d.getDate() + Math.ceil(jours / pas) * pas);
+  } else if (d > fin) return dates; // la date connue est le premier paiement
+  while (d <= fin) { if (d >= debut) dates.push(ymd(d)); d.setDate(d.getDate() + pas); }
+  return dates;
+}
+
 /** Dates de versement d'un revenu récurrent dans un mois donné. */
 export function datesRevenu(rev, moisTxt) {
   if (!rev.dateReference || rev.actif === false) return [];
   const ref = versDate(rev.dateReference);
-  const debut = versDate(moisTxt + '-01');
   const fin = finDuMois(moisTxt);
   const dates = [];
-  if (rev.frequence === 'hebdo' || rev.frequence === '2sem') {
-    const pas = rev.frequence === 'hebdo' ? 7 : 14;
-    const d = new Date(ref);
-    if (d < debut) {
-      const jours = Math.round((debut - d) / 86400000);
-      d.setDate(d.getDate() + Math.ceil(jours / pas) * pas);
-    }
-    while (d <= fin) { if (d >= debut) dates.push(ymd(d)); d.setDate(d.getDate() + pas); }
+  if (periodique(rev.frequence)) {
+    return datesPeriodiques(rev.dateReference, rev.frequence, moisTxt);
   } else if (rev.frequence === 'mensuel') {
     if (ym(ref) <= moisTxt) {
       const jour = Math.min(ref.getDate(), fin.getDate());
@@ -64,16 +75,33 @@ export function datesRevenu(rev, moisTxt) {
 
 // ---------- dépenses fixes
 export const FREQUENCES_FIXES = {
+  hebdo: 'Chaque semaine', '2sem': 'Aux 2 semaines',
   mensuel: 'Chaque mois', '2mois': 'Aux 2 mois', annuel: 'Une fois par année', versements: 'En versements (mois choisis)'
 };
 
 export function moisDuFixe(f) {
-  if (f.frequence === 'mensuel') return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  if (f.frequence === 'mensuel' || periodique(f.frequence)) return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   return String(f.moisPaiement || '').split(/[,; ]+/).map(Number).filter(n => n >= 1 && n <= 12);
 }
 
-export function fixeDansLeMois(f, moisTxt) {
-  return f.actif !== false && moisDuFixe(f).includes(Number(moisTxt.slice(5, 7)));
+/** Dates de paiement d'une dépense fixe dans un mois (1er du mois pour les fréquences mensuelles et plus). */
+export function datesFixe(f, moisTxt) {
+  if (f.actif === false) return [];
+  if (periodique(f.frequence)) return f.dateReference ? datesPeriodiques(f.dateReference, f.frequence, moisTxt) : [];
+  return moisDuFixe(f).includes(Number(moisTxt.slice(5, 7))) ? [`${moisTxt}-01`] : [];
+}
+
+export function fixeDansLeMois(f, moisTxt) { return datesFixe(f, moisTxt).length > 0; }
+
+/** Id de l'occurrence d'une dépense fixe : par mois, ou par date si elle est payée chaque semaine. */
+export const idFixe = (f, date) => periodique(f.frequence) ? `fixe-${f.id}-${date}` : `fixe-${f.id}-${date.slice(0, 7)}`;
+
+/**
+ * Montant d'une dépense fixe à une date, selon son historique.
+ * Pour les fréquences mensuelles et plus, le changement compte pour tout le mois où il commence.
+ */
+export function montantFixe(f, date) {
+  return montantA(f, periodique(f.frequence) ? date : date.slice(0, 7) + '-31');
 }
 
 // ---------- occurrences prévues (virtuelles tant qu'elles ne sont pas dans Transactions)
@@ -91,12 +119,14 @@ export function occurrences(donnees, moisTxt) {
     }
   }
   for (const f of donnees.fixes) {
-    if (!fixeDansLeMois(f, moisTxt)) continue;
-    occ.push({
-      id: `fixe-${f.id}-${moisTxt}`, factureId: `fixe-${f.id}-${moisTxt}`, date: `${moisTxt}-01`, mois: moisTxt,
-      type: 'depense', categorie: f.categorie, sousCategorie: f.sousCategorie, commerce: f.nom,
-      montant: Number(f.montant) || 0, source: 'fixe', refId: f.id, statut: 'prevu', saisiPar: '', note: ''
-    });
+    for (const date of datesFixe(f, moisTxt)) {
+      const id = idFixe(f, date);
+      occ.push({
+        id, factureId: id, date, mois: moisTxt,
+        type: 'depense', categorie: f.categorie, sousCategorie: f.sousCategorie, commerce: f.nom,
+        montant: montantFixe(f, date), source: 'fixe', refId: f.id, statut: 'prevu', saisiPar: '', note: ''
+      });
+    }
   }
   return occ;
 }
@@ -156,6 +186,15 @@ export function occurrencesAMaterialiser(donnees) {
   }
   return res;
 }
+
+// ---------- montant modifié après enregistrement (marqueur mauve)
+/** Suite des totaux d'une facture : [origine, ..., actuel]. Vide si jamais modifié. */
+export function historiqueMontantDe(t) {
+  let v = t && t.historiqueMontant;
+  if (typeof v === 'string') { try { v = JSON.parse(v); } catch { v = null; } }
+  return Array.isArray(v) ? v.map(Number).filter(n => !isNaN(n)) : [];
+}
+export const montantModifie = t => t && t.type === 'depense' && t.source !== 'fixe' && historiqueMontantDe(t).length >= 2;
 
 // ---------- texte : normaliser pour la reconnaissance des commerces
 export const normaliser = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')

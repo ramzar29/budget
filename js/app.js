@@ -5,7 +5,7 @@ import { E, charger, initialiserSiVide, materialiser, donneesCalc, icone, revenu
 import { calculerMois, calculerAnnee, argent, moisCourant, decalerMois, nomMois, nomMoisCourt } from './calc.js';
 import { demarrerSyncAuto, surEtatSync, synchroniser } from './sync.js';
 import { nipDefini, verifierNip, biometrieActive, biometrieDisponible, deverrouillerBiometrie, activerBiometrie, surveillerArrierePlan } from './lock.js';
-import { ouvrirAjout, ecranTransactions, ouvrirConfirmations, ouvrirSaisie } from './saisie.js';
+import { ouvrirAjout, ecranTransactions, ouvrirConfirmations, ouvrirSaisie, rechercherEntrees, listeEntrees } from './saisie.js';
 import { ecranReglages, choisirMoi, demanderNouveauNip, configurerSync } from './reglages.js';
 import { ouvrirPhoto } from './ocr.js';
 
@@ -89,7 +89,7 @@ async function ecranVerrou() {
 }
 
 // ------------------------------------------------------------------ navigation
-function aller(ecran, options = {}) { Object.assign(vue, { ecran, filtre: null }, options); dessiner(); window.scrollTo(0, 0); }
+function aller(ecran, options = {}) { Object.assign(vue, { ecran, filtre: null, recherche: null }, options); dessiner(); window.scrollTo(0, 0); }
 
 function barreNav() {
   const item = (id, ic, txt) => h('button', { class: 'nav-item' + (vue.ecran === id ? ' actif' : ''), onclick: () => aller(id), 'aria-label': txt },
@@ -124,16 +124,21 @@ async function dessiner() {
   try {
     let contenu;
     if (vue.ecran === 'accueil') contenu = ecranAccueil();
-    else if (vue.ecran === 'transactions') contenu = h('div', {}, selecteurMois(),
-      vue.filtre ? h('button', { class: 'puce filtre', onclick: () => { vue.filtre = null; dessiner(); } }, `${icone(vue.filtre)} ${vue.filtre} ✕`) : null,
-      ecranTransactions(vue.mois, vue.filtre));
+    else if (vue.ecran === 'transactions') contenu = ecranEntrees();
     else if (vue.ecran === 'annee') contenu = ecranAnnee();
     else contenu = await ecranReglages(dessiner);
 
+    // Garder le curseur dans la zone de recherche si une synchro redessine l'écran pendant la frappe.
+    const actif = document.activeElement && document.activeElement.id === 'recherche-texte'
+      ? { debut: document.activeElement.selectionStart, fin: document.activeElement.selectionEnd } : null;
     vider(racine).append(
       h('header', { class: 'entete' }, h('h1', {}, { accueil: 'Budget', transactions: 'Entrées', annee: 'Année', reglages: 'Réglages' }[vue.ecran]), indicateurSync),
       h('main', { class: 'contenu' }, contenu),
       barreNav());
+    if (actif) {
+      const champ = document.getElementById('recherche-texte');
+      if (champ) { champ.focus(); champ.setSelectionRange(actif.debut, actif.fin); }
+    }
 
     if (!confirmationsMontrees && revenusAConfirmer().length) { confirmationsMontrees = true; setTimeout(ouvrirConfirmations, 400); }
   } finally { dessinEnCours = false; }
@@ -179,6 +184,60 @@ function ecranAccueil() {
           h('span', { class: 'cat-montant' }, argent(c.total)),
           h('span', { class: 'cat-barre' }, h('span', { style: { width: Math.round(c.total / maxCat * 100) + '%' } })))))
         : h('p', { class: 'vide' }, 'Aucune dépense ce mois-ci. Appuie sur ＋ pour en ajouter une.')));
+}
+
+// ------------------------------------------------------------------ Entrées (+ recherche)
+function ecranEntrees() {
+  const loupe = h('button', {
+    class: 'btn-icone loupe' + (vue.recherche ? ' actif' : ''), 'aria-label': vue.recherche ? 'Fermer la recherche' : 'Rechercher',
+    onclick: () => { vue.recherche = vue.recherche ? null : { type: 'tout', categorie: '', texte: '' }; dessiner(); }
+  }, vue.recherche ? '✕' : '🔍');
+
+  if (!vue.recherche) {
+    return h('div', {},
+      h('div', { class: 'outils-entrees' }, selecteurMois(), loupe),
+      vue.filtre ? h('button', { class: 'puce filtre', onclick: () => { vue.filtre = null; dessiner(); } }, `${icone(vue.filtre)} ${vue.filtre} ✕`) : null,
+      ecranTransactions(vue.mois, vue.filtre));
+  }
+
+  const r = vue.recherche;
+  const resultats = h('div', {});
+  const type = h('select', { onchange: () => { r.type = type.value; r.categorie = ''; remplirCategories(); majResultats(); } },
+    h('option', { value: 'tout' }, 'Tout'), h('option', { value: 'revenu' }, 'Revenus'), h('option', { value: 'depense' }, 'Dépenses'));
+  type.value = r.type;
+  const categorie = h('select', { onchange: () => { r.categorie = categorie.value; majResultats(); } });
+  function remplirCategories() {
+    const types = r.type === 'tout' ? ['depense', 'revenu'] : [r.type];
+    const noms = [...new Set(E.categories.filter(c => types.includes(c.type)).map(c => c.categorie))];
+    // Catégories utilisées dans des entrées mais retirées de la liste : les garder cherchables.
+    for (const t of E.transactions) if (!t.supprime && types.includes(t.type) && t.categorie && !noms.includes(t.categorie)) noms.push(t.categorie);
+    categorie.replaceChildren(h('option', { value: '' }, 'Toutes les catégories'),
+      ...noms.sort((a, b) => a.localeCompare(b, 'fr')).map(n => h('option', { value: n }, `${icone(n)} ${n}`)));
+    categorie.value = noms.includes(r.categorie) ? r.categorie : '';
+  }
+  remplirCategories();
+  const texte = h('input', { type: 'search', id: 'recherche-texte', value: r.texte, placeholder: 'Commerce, note, montant…', autocomplete: 'off',
+    oninput: () => { r.texte = texte.value; majResultats(); } });
+
+  function majResultats() {
+    const groupes = rechercherEntrees(r);
+    const somme = type => groupes.flat().filter(l => l.type === type).reduce((s, l) => s + Number(l.montant), 0);
+    const totaux = [r.type !== 'depense' && `revenus ${argent(somme('revenu'))}`, r.type !== 'revenu' && `dépenses ${argent(somme('depense'))}`].filter(Boolean).join(' · ');
+    resultats.replaceChildren(
+      h('p', { class: 'aide' }, groupes.length
+        ? `${groupes.length} résultat${groupes.length > 1 ? 's' : ''} · ${totaux}`
+        : 'Aucun résultat.'),
+      groupes.length ? listeEntrees(groupes, { avecAnnee: true }) : null);
+  }
+  majResultats();
+
+  return h('div', {},
+    h('div', { class: 'outils-entrees' }, h('h3', { class: 'titre-recherche' }, '🔍 Recherche dans toutes les entrées'), loupe),
+    h('section', { class: 'carte recherche' },
+      h('label', { class: 'champ' }, h('span', { class: 'etiquette' }, 'Item(s) à rechercher'), type),
+      h('label', { class: 'champ' }, h('span', { class: 'etiquette' }, 'Catégorie'), categorie),
+      h('label', { class: 'champ' }, h('span', { class: 'etiquette' }, 'Texte à rechercher'), texte)),
+    resultats);
 }
 
 // ------------------------------------------------------------------ Année
