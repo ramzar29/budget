@@ -110,7 +110,7 @@ small { color: var(--doux); }
 .formulaire { display: flex; flex-direction: column; gap: 12px; }
 .champ { display: flex; flex-direction: column; gap: 4px; }
 .etiquette { font-size: .85rem; font-weight: 600; color: var(--doux); }
-input[type=text], input[type=url], input[type=password], input[type=date], input[type=month], input[type=search], select {
+input[type=text], input[type=number], input[type=url], input[type=password], input[type=date], input[type=month], input[type=search], select {
   width: 100%; padding: 12px; border: 1px solid var(--ligne); border-radius: 10px; background: var(--fond); min-height: 46px; }
 input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 input.montant { font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums; }
