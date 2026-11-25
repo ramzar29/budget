@@ -41,6 +41,8 @@ export function ouvrirSaisie({ type = 'depense', lignesExistantes = null, prerem
 
   // Marqueur mauve : seulement pour une dépense non fixe déjà enregistrée.
   const suivreMontant = edition && type === 'depense' && principale.source !== 'fixe';
+  // Paie, revenu récurrent ou dépense fixe : le changement ne vaut que pour ce paiement.
+  const automatique = edition && ['fixe', 'paie', 'revenu-recurrent'].includes(principale.source);
   const totalAvant = edition ? arrondi(lignesTriees.reduce((s, l) => s + Number(l.montant), 0)) : 0;
   const chaineAvant = edition ? historiqueMontantDe(lignesTriees.find(l => historiqueMontantDe(l).length) || {}) : [];
 
@@ -145,9 +147,13 @@ export function ouvrirSaisie({ type = 'depense', lignesExistantes = null, prerem
 
     async function effacer() {
       const msg = principale.source === 'fixe'
-        ? `Retirer « ${principale.commerce} » pour ${nomMois(principale.mois)} ? (La dépense fixe reste prévue les autres mois.)`
+        ? `Retirer « ${principale.commerce} » du ${principale.date} ? (La dépense fixe reste prévue les autres fois.)`
+        : automatique ? `Retirer « ${principale.commerce} » du ${principale.date} ? (Le revenu reste prévu les autres fois.)`
         : 'Supprimer cette entrée ?';
       if (!await confirmer(msg, { oui: 'Supprimer', danger: true })) return;
+      // Une occurrence prévue pas encore créée est enregistrée comme supprimée (sinon elle réapparaîtrait).
+      const nonCreees = lignesExistantes.filter(l => !E.transactions.some(t => t.id === l.id));
+      if (nonCreees.length) await sauver('Transactions', nonCreees.map(l => ({ ...l, supprime: true })));
       await supprimer('Transactions', lignesExistantes.map(l => l.id));
       synchroniserBientot();
       fermer();
@@ -163,7 +169,8 @@ export function ouvrirSaisie({ type = 'depense', lignesExistantes = null, prerem
     const form = h('form', { class: 'formulaire', onsubmit: enregistrer },
       miniature,
       prerempli.lu ? h('p', { class: 'bandeau-lu' }, '📷 Valeurs lues sur la photo — vérifie-les et corrige au besoin.') : null,
-      h('label', { class: 'champ' }, h('span', { class: 'etiquette' }, 'Montant total', historiqueTxt ? ' ' : null, historiqueTxt), total),
+      h('label', { class: 'champ' }, h('span', { class: 'etiquette' }, 'Montant total', historiqueTxt ? ' ' : null, historiqueTxt), total,
+        automatique ? h('small', { class: 'aide' }, 'Ce changement vaut seulement pour ce paiement : les suivants gardent le montant défini dans Réglages.') : null),
       champ(type === 'revenu' ? 'Provenance' : 'Commerce', commerce), datalist,
       champ('Catégorie', catPrincipale), suggestion,
       type === 'depense' ? h('div', {}, zoneSeparee, reste,
@@ -279,8 +286,9 @@ export function listeEntrees(groupes, { avecAnnee = false } = {}) {
     liste.append(h('li', {
       class: 'tx' + (prevu ? ' prevu' : '') + (estFixe(p) ? ' fixe' : ''),
       onclick: () => {
-        if (virtuelle) return toast('Prévu — modifie le modèle dans Réglages', 'info');
-        const tout = E.transactions.filter(t => !t.supprime && (t.factureId || t.id) === (p.factureId || p.id));
+        // Paie, revenu récurrent ou dépense fixe pas encore créé (mois futur) : on le modifie quand même ;
+        // le changement ne vaut que pour ce paiement, les suivants gardent le montant du modèle.
+        const tout = virtuelle ? g : E.transactions.filter(t => !t.supprime && (t.factureId || t.id) === (p.factureId || p.id));
         ouvrirSaisie({ type: p.type, lignesExistantes: tout });
       }
     },

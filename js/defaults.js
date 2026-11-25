@@ -13,11 +13,11 @@ export const ICONES = {
 
 const DEPENSES = {
   'Logement': ['Hypothèque / loyer', 'Taxes municipales et scolaires', 'Assurance habitation', 'Entretien et réparations'],
-  'Services': ['Électricité', 'Internet', 'Cellulaires', 'Abonnements'],
+  'Services': ['Électricité', 'Internet', 'Cellulaires', 'Abonnements', 'Frais de garde'],
   'Alimentation': ['Épicerie', 'Restaurants', 'Café et collations'],
   'Transport': ['Essence', 'Recharge électrique', 'Entretien auto', 'Assurance auto', 'Immatriculation et permis', 'Stationnement et péages'],
   'Santé': ['Pharmacie', 'Dentiste', 'Optométriste', 'Soins'],
-  'Personnel': ['Vêtements', 'Coiffure et soins', 'Cadeaux'],
+  'Personnel': ['Vêtements', 'Coiffure et soins', 'Cadeaux', 'Assurance vie et invalidité'],
   'Loisirs': ['Sorties', 'Sports', 'Voyages', 'Hobbies'],
   'Maison': ['Meubles', 'Électroménagers', 'Quincaillerie', 'Articles ménagers'],
   'Finances': ['Épargne (REER / CELI)', 'Frais bancaires', 'Dons'],
@@ -97,6 +97,17 @@ export function categoriesDeDepart() {
     }
   }
   return lignes;
+}
+
+/**
+ * Sous-catégories ajoutées après la première installation : créées une fois sur les appareils
+ * existants (id fixe = pas de doublon entre téléphones ; si l'utilisateur les supprime, elles ne
+ * reviennent pas car la ligne supprimée existe encore).
+ */
+export function categoriesAjoutees() {
+  const ajouts = [['Services', 'Frais de garde'], ['Personnel', 'Assurance vie et invalidité']];
+  const ids = new Set(ajouts.map(([c, s]) => `cat-${slug(c)}-${slug(s)}`));
+  return categoriesDeDepart().filter(c => ids.has(c.id));
 }
 
 export function commercesDeDepart() {

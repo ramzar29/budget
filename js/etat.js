@@ -1,7 +1,7 @@
 // Données chargées en mémoire et opérations métier (sauvegarde, apprentissage, matérialisation).
 import { tous, sauver, ecrireBrut, getMeta, uuid } from './db.js';
-import { categoriesDeDepart, commercesDeDepart, EPOQUE, ICONES } from './defaults.js';
-import { moisCourant, occurrencesAMaterialiser, normaliser, trouverCommerce, montantA, datesRevenu, datesFixe, idFixe, montantFixe, aujourdhui, decalerMois } from './calc.js';
+import { categoriesDeDepart, categoriesAjoutees, commercesDeDepart, EPOQUE, ICONES } from './defaults.js';
+import { moisCourant, occurrencesAMaterialiser, normaliser, trouverCommerce, montantA, datesRevenu, datesFixe, idFixe, montantFixe, premierPaiement, aujourdhui, decalerMois } from './calc.js';
 import { synchroniserBientot } from './sync.js';
 
 export const E = {
@@ -36,7 +36,12 @@ export async function initialiserSiVide() {
   if (!cats.length) {
     await ecrireBrut('Categories', categoriesDeDepart().map(c => ({ ...c, _sale: true })));
     await ecrireBrut('Commerces', commercesDeDepart().map(c => ({ ...c, _sale: true })));
+    return;
   }
+  // Nouvelles sous-catégories de départ (mises à jour de l'app) : ajoutées si elles n'ont jamais existé.
+  const ids = new Set(cats.map(c => c.id));
+  const manquantes = categoriesAjoutees().filter(c => !ids.has(c.id));
+  if (manquantes.length) await ecrireBrut('Categories', manquantes.map(c => ({ ...c, _sale: true })));
 }
 
 export async function reglage(id, valeur) {
@@ -173,6 +178,9 @@ export async function rafraichirPrevus(refId) {
   for (const t of E.transactions) {
     if (t.supprime || t.statut !== 'prevu' || t.refId !== refId) continue;
     if (t.mois < courant) {
+      // Dépense fixe : rien avant la date du premier paiement (même dans les mois passés).
+      const premier = fx && premierPaiement(fx);
+      if (premier && t.date < premier) { maj.push({ ...t, supprime: true }); continue; }
       const m = rev ? montantA(rev, t.date) : fx ? montantFixe(fx, t.date) : null;
       if (m !== null && m !== Number(t.montant)) maj.push({ ...t, montant: m });
       continue;

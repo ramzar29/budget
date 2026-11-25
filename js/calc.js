@@ -74,45 +74,120 @@ export function datesRevenu(rev, moisTxt) {
 }
 
 // ---------- dépenses fixes
+// frequence : hebdo | 2sem | mensuel | 2mois | annuel | versements | perso:<X>:<unité>
+//   (perso = « Tous les X jours / semaines / mois / années »).
+// dateReference : date du premier paiement (AAAA-MM-JJ). Anciennes données : vide ou un jour « 24 ».
+// moisPaiement (versements) : mois « 1,3,5 » OU dates précises « 2026-11-24,2027-01-15 ».
 export const FREQUENCES_FIXES = {
   hebdo: 'Chaque semaine', '2sem': 'Aux 2 semaines',
-  mensuel: 'Chaque mois', '2mois': 'Aux 2 mois', annuel: 'Une fois par année', versements: 'En versements (mois choisis)'
+  mensuel: 'Chaque mois', '2mois': 'Aux 2 mois', annuel: 'Une fois par année',
+  versements: 'En versements (mois ou dates choisis)', perso: 'Tous les X… (personnalisé)'
 };
+// [singulier (« Chaque … »), pluriel (« Tous les X … »), nom dans la liste]
+export const UNITES = { jours: ['jour', 'jours', 'Jours'], semaines: ['semaine', 'semaines', 'Semaines'], mois: ['mois', 'mois', 'Mois'], annees: ['année', 'ans', 'Années'] };
 
-export function moisDuFixe(f) {
-  if (f.frequence === 'mensuel' || periodique(f.frequence)) return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-  return String(f.moisPaiement || '').split(/[,; ]+/).map(Number).filter(n => n >= 1 && n <= 12);
+/** { n, unite } d'une fréquence (null pour « versements »). */
+export function intervalle(frequence) {
+  const f = String(frequence || '');
+  if (f.startsWith('perso:')) {
+    const [, n, unite] = f.split(':');
+    return { n: Math.max(1, parseInt(n, 10) || 1), unite: UNITES[unite] ? unite : 'mois' };
+  }
+  return { hebdo: { n: 1, unite: 'semaines' }, '2sem': { n: 2, unite: 'semaines' }, mensuel: { n: 1, unite: 'mois' },
+    '2mois': { n: 2, unite: 'mois' }, annuel: { n: 1, unite: 'annees' } }[f] || null;
 }
 
-/**
- * Jour du paiement (1 à 31) d'une dépense fixe mensuelle ou plus. Il est rangé dans la colonne
- * dateReference (ex. « 24 ») pour ne pas ajouter de colonne au Sheet ; vide = le 1er.
- */
+/** Texte de la fréquence, ex. « Tous les 3 mois ». */
+export function libelleFrequence(frequence) {
+  if (!String(frequence || '').startsWith('perso:')) return FREQUENCES_FIXES[frequence] || '';
+  const { n, unite } = intervalle(frequence);
+  if (n === 1) return `Chaque ${UNITES[unite][0]}`;
+  return unite === 'semaines' ? `Toutes les ${n} semaines` : `Tous les ${n} ${UNITES[unite][1]}`;
+}
+
+const dateComplete = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '').trim());
+/** Date du premier paiement, ou null (anciennes données). */
+export const premierPaiement = f => dateComplete(f.dateReference) ? String(f.dateReference).trim() : null;
+
+/** Dates précises choisies (versements), triées. */
+export function datesChoisies(f) {
+  return String(f.moisPaiement || '').split(/[,; ]+/).map(s => s.trim()).filter(dateComplete).sort();
+}
+
+export function moisDuFixe(f) {
+  return String(f.moisPaiement || '').split(/[,; ]+/).filter(s => /^\d{1,2}$/.test(s)).map(Number).filter(n => n >= 1 && n <= 12);
+}
+
+/** Ancien format : jour du paiement « 24 » (vide = le 1er). */
 export function jourPaiement(f) {
+  const p = premierPaiement(f);
+  if (p) return Number(p.slice(8, 10));
   const v = String(f.dateReference ?? '').trim();
   const n = /^\d{1,2}$/.test(v) ? Number(v) : 1;
   return n >= 1 && n <= 31 ? n : 1;
 }
 
-/** Dates de paiement d'une dépense fixe dans un mois (jour du paiement, ou le dernier jour si le mois est plus court). */
+const jourDansMois = (moisTxt, jour) => `${moisTxt}-${pad(Math.min(jour, finDuMois(moisTxt).getDate()))}`;
+const indexMois = moisTxt => Number(moisTxt.slice(0, 4)) * 12 + Number(moisTxt.slice(5, 7)) - 1;
+
+/** Dates de paiement d'une dépense fixe dans un mois. Rien avant la date du premier paiement. */
 export function datesFixe(f, moisTxt) {
   if (f.actif === false) return [];
-  if (periodique(f.frequence)) return f.dateReference ? datesPeriodiques(f.dateReference, f.frequence, moisTxt) : [];
-  if (!moisDuFixe(f).includes(Number(moisTxt.slice(5, 7)))) return [];
-  return [`${moisTxt}-${pad(Math.min(jourPaiement(f), finDuMois(moisTxt).getDate()))}`];
+  const premier = premierPaiement(f);
+  if (premier && moisTxt < premier.slice(0, 7)) return [];
+
+  if (f.frequence === 'versements') {
+    const dates = datesChoisies(f);
+    if (dates.length) return dates.filter(d => d.startsWith(moisTxt + '-'));
+    if (!moisDuFixe(f).includes(Number(moisTxt.slice(5, 7)))) return [];
+    const d = jourDansMois(moisTxt, jourPaiement(f));
+    return premier && d < premier ? [] : [d];
+  }
+
+  const iv = intervalle(f.frequence);
+  if (!iv) return [];
+  if (iv.unite === 'jours' || iv.unite === 'semaines') {
+    if (!premier) return []; // une date de départ est nécessaire
+    const pas = iv.n * (iv.unite === 'semaines' ? 7 : 1);
+    const debut = versDate(moisTxt + '-01');
+    const fin = finDuMois(moisTxt);
+    const d = versDate(premier);
+    if (d > fin) return [];
+    if (d < debut) d.setDate(d.getDate() + Math.ceil(Math.round((debut - d) / 86400000) / pas) * pas);
+    const dates = [];
+    while (d <= fin) { dates.push(ymd(d)); d.setDate(d.getDate() + pas); }
+    return dates;
+  }
+
+  // Mois ou années
+  const pasMois = iv.n * (iv.unite === 'annees' ? 12 : 1);
+  if (!premier) {
+    // Anciennes données sans date de départ : mois cochés (aux 2 mois, annuel) ou tous les mois.
+    if (f.frequence === 'mensuel') return [jourDansMois(moisTxt, jourPaiement(f))];
+    return moisDuFixe(f).includes(Number(moisTxt.slice(5, 7))) ? [jourDansMois(moisTxt, jourPaiement(f))] : [];
+  }
+  const ecart = indexMois(moisTxt) - indexMois(premier.slice(0, 7));
+  return ecart >= 0 && ecart % pasMois === 0 ? [jourDansMois(moisTxt, Number(premier.slice(8, 10)))] : [];
 }
 
 export function fixeDansLeMois(f, moisTxt) { return datesFixe(f, moisTxt).length > 0; }
 
-/** Id de l'occurrence d'une dépense fixe : par mois, ou par date si elle est payée chaque semaine. */
-export const idFixe = (f, date) => periodique(f.frequence) ? `fixe-${f.id}-${date}` : `fixe-${f.id}-${date.slice(0, 7)}`;
+/** Paiements identifiés par date (plusieurs possibles dans un mois) plutôt que par mois. */
+export const parDate = f => {
+  const iv = intervalle(f.frequence);
+  return (iv && (iv.unite === 'jours' || iv.unite === 'semaines')) || (f.frequence === 'versements' && datesChoisies(f).length > 0)
+    || String(f.frequence || '').startsWith('perso:');
+};
+
+/** Id de l'occurrence d'une dépense fixe : par mois (mensuel, 2 mois, annuel, mois choisis) ou par date. */
+export const idFixe = (f, date) => parDate(f) ? `fixe-${f.id}-${date}` : `fixe-${f.id}-${date.slice(0, 7)}`;
 
 /**
  * Montant d'une dépense fixe à une date, selon son historique.
- * Pour les fréquences mensuelles et plus, le changement compte pour tout le mois où il commence.
+ * Pour les paiements identifiés par mois, le changement compte pour tout le mois où il commence.
  */
 export function montantFixe(f, date) {
-  return montantA(f, periodique(f.frequence) ? date : date.slice(0, 7) + '-31');
+  return montantA(f, parDate(f) ? date : date.slice(0, 7) + '-31');
 }
 
 // ---------- occurrences prévues (virtuelles tant qu'elles ne sont pas dans Transactions)
