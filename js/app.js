@@ -1,4 +1,4 @@
-// Point d'entrée : démarrage, verrou, navigation et écrans Accueil / Transactions / Année.
+// Point d'entrée : démarrage, verrou, navigation et écrans Accueil / Mouvements / Année (Récurrents et Réglages : reglages.js).
 import { h, vider, toast, fermerDerniere } from './ui.js';
 import { surChangement, getMeta } from './db.js';
 import { E, charger, initialiserSiVide, materialiser, donneesCalc, icone, revenusAConfirmer, reglage } from './etat.js';
@@ -6,7 +6,7 @@ import { calculerMois, calculerAnnee, argent, moisCourant, decalerMois, nomMois,
 import { demarrerSyncAuto, surEtatSync, synchroniser } from './sync.js';
 import { nipDefini, verifierNip, biometrieActive, biometrieDisponible, deverrouillerBiometrie, activerBiometrie, surveillerArrierePlan } from './lock.js';
 import { ouvrirAjout, ecranTransactions, ouvrirConfirmations, ouvrirSaisie, rechercherEntrees, listeEntrees } from './saisie.js';
-import { ecranReglages, choisirMoi, demanderNouveauNip, configurerSync } from './reglages.js';
+import { ecranReglages, ecranRecurrents, choisirMoi, demanderNouveauNip, configurerSync } from './reglages.js';
 import { ouvrirPhoto } from './ocr.js';
 
 const racine = document.getElementById('app');
@@ -60,7 +60,7 @@ async function configurationInitiale() {
   if (!E.reglages.debut) await reglage('debut', moisCourant());
   await charger();
   await apresDeverrouillage();
-  toast(`Bienvenue ${E.moi} ! Ajoute tes paies et dépenses fixes dans Réglages.`, 'info');
+  toast(`Bienvenue ${E.moi} ! Ajoute tes paies et dépenses fixes dans l'onglet Récurrents.`, 'info');
 }
 
 // ------------------------------------------------------------------ verrou
@@ -137,7 +137,18 @@ function barreNav() {
   return h('nav', { class: 'barre-nav' },
     item('accueil', '🏠', 'Accueil'), item('transactions', '📋', 'Mouvements'),
     h('button', { class: 'fab', 'aria-label': 'Ajouter', onclick: () => ouvrirAjout(ouvrirPhoto) }, '＋'),
-    item('annee', '📅', 'Année'), item('reglages', '⚙️', 'Réglages'));
+    item('recurrents', '🔁', 'Récurrents'), item('annee', '📅', 'Année'));
+}
+
+// Roue ⚙️ en haut à droite : ouvre les Réglages.
+function boutonReglages() {
+  return h('button', { class: 'btn-icone roue' + (vue.ecran === 'reglages' ? ' actif' : ''), 'aria-label': 'Réglages', onclick: () => aller('reglages') }, '⚙️');
+}
+
+// « 📅 Aujourd'hui » : revient au mois actuel (affiché seulement si on regarde un autre mois).
+function boutonAujourdhui() {
+  if (vue.mois === moisCourant()) return null;
+  return h('button', { class: 'btn-aujourdhui', 'aria-label': 'Revenir au mois actuel', onclick: () => { vue.mois = moisCourant(); dessiner(); } }, '📅 Aujourd\'hui');
 }
 
 const indicateurSync = h('button', { class: 'sync', onclick: () => synchroniser() });
@@ -166,13 +177,15 @@ async function dessiner() {
     if (vue.ecran === 'accueil') contenu = ecranAccueil();
     else if (vue.ecran === 'transactions') contenu = ecranEntrees();
     else if (vue.ecran === 'annee') contenu = ecranAnnee();
+    else if (vue.ecran === 'recurrents') contenu = ecranRecurrents(dessiner);
     else contenu = await ecranReglages(dessiner);
 
     // Garder le curseur dans la zone de recherche si une synchro redessine l'écran pendant la frappe.
     const actif = document.activeElement && document.activeElement.id === 'recherche-texte'
       ? { debut: document.activeElement.selectionStart, fin: document.activeElement.selectionEnd } : null;
     vider(racine).append(
-      h('header', { class: 'entete' }, h('h1', {}, { accueil: 'Budget', transactions: 'Mouvements', annee: 'Année', reglages: 'Réglages' }[vue.ecran]), indicateurSync),
+      h('header', { class: 'entete' }, h('h1', {}, { accueil: 'Budget', transactions: 'Mouvements', recurrents: 'Récurrents', annee: 'Année', reglages: 'Réglages' }[vue.ecran]),
+        h('div', { class: 'entete-droite' }, indicateurSync, boutonReglages())),
       h('main', { class: 'contenu' }, contenu),
       barreNav());
     if (actif) {
@@ -196,7 +209,7 @@ function ecranAccueil() {
   const signe = v => v >= 0 ? 'positif' : 'negatif';
 
   return h('div', {},
-    selecteurMois(),
+    h('div', { class: 'outils-entrees' }, selecteurMois(), boutonAujourdhui()),
     aConfirmer.length ? h('button', { class: 'bandeau', onclick: ouvrirConfirmations },
       `💵 ${aConfirmer.length} revenu${aConfirmer.length > 1 ? 's' : ''} à confirmer`, h('span', {}, '›')) : null,
     vue.mois < E.debut ? h('p', { class: 'aide centre' }, `Le suivi commence en ${nomMois(E.debut)}.`) : null,
@@ -249,7 +262,7 @@ function ecranEntrees() {
 
   if (!vue.recherche) {
     return h('div', {},
-      h('div', { class: 'outils-entrees' }, selecteurMois(), loupe),
+      h('div', { class: 'outils-entrees' }, selecteurMois(), boutonAujourdhui(), loupe),
       h('div', { class: 'cases-voir' },
         caseVoir('fixes', '📌 Fixes et paies', 'fixe'),
         caseVoir('saisis', '✍️ Saisis par moi', 'saisi')),

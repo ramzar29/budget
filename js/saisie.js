@@ -170,7 +170,7 @@ export function ouvrirSaisie({ type = 'depense', lignesExistantes = null, prerem
       miniature,
       prerempli.lu ? h('p', { class: 'bandeau-lu' }, '📷 Valeurs lues sur la photo — vérifie-les et corrige au besoin.') : null,
       h('label', { class: 'champ' }, h('span', { class: 'etiquette' }, 'Montant total', historiqueTxt ? ' ' : null, historiqueTxt), total,
-        automatique ? h('small', { class: 'aide' }, 'Ce changement vaut seulement pour ce paiement : les suivants gardent le montant défini dans Réglages.') : null),
+        automatique ? h('small', { class: 'aide' }, 'Ce changement vaut seulement pour ce paiement : les suivants gardent le montant défini dans l\'onglet Récurrents.') : null),
       champ(type === 'revenu' ? 'Provenance' : 'Commerce', commerce), datalist,
       champ('Catégorie', catPrincipale), suggestion,
       type === 'depense' ? h('div', {}, zoneSeparee, reste,

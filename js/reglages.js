@@ -1,4 +1,4 @@
-// Écran Réglages : profil, sécurité, synchro, revenus récurrents, dépenses fixes, catégories, commerces.
+// Écran Réglages (profil, sécurité, synchro, catégories, commerces) et onglet Récurrents (revenus récurrents, dépenses fixes).
 import { h, feuille, toast, confirmer, champ, champMontant, lireMontant } from './ui.js';
 import { E, categoriesPar, icone, reglage, rafraichirPrevus, utilisateurs } from './etat.js';
 import { sauver, supprimer, getMeta, setMeta, uuid } from './db.js';
@@ -45,27 +45,32 @@ export async function ecranReglages(rafraichir) {
     rangee('Connexion au Google Sheets', apiUrl ? 'Configurée' : 'À configurer', () => configurerSync(rafraichir)),
     rangee('Synchroniser maintenant', null, async () => { await synchroniser(); toast('Synchro lancée'); }, '↻')));
 
-  // ---- Revenus récurrents
-  const revs = E.revenus.map(r => rangee(r.nom,
-    `${FREQ_REVENUS[r.frequence] || ''} · ${argent(montantA(r, aujourdhui()))}${r.personne ? ' · ' + r.personne : ''}${r.actif === false ? ' · inactif' : ''}`,
-    () => modifierRevenu(r, rafraichir)));
-  racine.append(section('💵 Revenus récurrents', ...revs,
-    h('button', { class: 'btn lien', onclick: () => modifierRevenu(null, rafraichir) }, '➕ Ajouter un revenu récurrent')));
-
-  // ---- Dépenses fixes
-  const fixes = E.fixes.map(f => rangee(f.nom,
-    `${libelleFrequence(f.frequence)}${premierPaiement(f) ? ` · dès le ${premierPaiement(f)}` : ''} · ${argent(montantFixe(f, aujourdhui()))} · ${f.categorie}${f.actif === false ? ' · inactif' : ''}`,
-    () => modifierFixe(f, rafraichir)));
-  racine.append(section('📌 Dépenses fixes', ...fixes,
-    h('button', { class: 'btn lien', onclick: () => modifierFixe(null, rafraichir) }, '➕ Ajouter une dépense fixe')));
-
   // ---- Catégories
   racine.append(section('🗂️ Catégories',
     rangee('Catégories de dépenses', `${categoriesPar('depense').size} catégories`, () => gererCategories('depense', rafraichir)),
     rangee('Catégories de revenus', `${categoriesPar('revenu').size} catégories`, () => gererCategories('revenu', rafraichir)),
     rangee('Commerces connus', `${E.commerces.length} commerces`, () => gererCommerces(rafraichir))));
 
-  racine.append(h('p', { class: 'aide centre' }, 'Budget · v6'));
+  racine.append(h('p', { class: 'aide centre' }, 'Budget · v7'));
+  return racine;
+}
+
+// Onglet « Récurrents » : revenus récurrents et dépenses fixes.
+export function ecranRecurrents(rafraichir) {
+  const racine = h('div', { class: 'reglages' });
+
+  const revs = E.revenus.map(r => rangee(r.nom,
+    `${FREQ_REVENUS[r.frequence] || ''} · ${argent(montantA(r, aujourdhui()))}${r.personne ? ' · ' + r.personne : ''}${r.actif === false ? ' · inactif' : ''}`,
+    () => modifierRevenu(r, rafraichir)));
+  racine.append(section('💵 Revenus récurrents', ...revs,
+    h('button', { class: 'btn lien', onclick: () => modifierRevenu(null, rafraichir) }, '➕ Ajouter un revenu récurrent')));
+
+  const fixes = E.fixes.map(f => rangee(f.nom,
+    `${libelleFrequence(f.frequence)}${premierPaiement(f) ? ` · dès le ${premierPaiement(f)}` : ''} · ${argent(montantFixe(f, aujourdhui()))} · ${f.categorie}${f.actif === false ? ' · inactif' : ''}`,
+    () => modifierFixe(f, rafraichir)));
+  racine.append(section('📌 Dépenses fixes', ...fixes,
+    h('button', { class: 'btn lien', onclick: () => modifierFixe(null, rafraichir) }, '➕ Ajouter une dépense fixe')));
+
   return racine;
 }
 
