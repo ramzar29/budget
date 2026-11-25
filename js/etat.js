@@ -25,7 +25,9 @@ export async function charger() {
   return E;
 }
 
-export const donneesCalc = () => ({ transactions: E.transactions, revenus: E.revenus, fixes: E.fixes, debut: E.debut });
+export const donneesCalc = () => ({ transactions: E.transactions, revenus: E.revenus, fixes: E.fixes, debut: E.debut, epicerie: epicerie() });
+/** Montant de base de l'épicerie (Réglages : epicerieMontant, epicerieFrequence = semaine | mois). */
+export const epicerie = () => ({ montant: Number(E.reglages.epicerieMontant) || 0, frequence: E.reglages.epicerieFrequence === 'mois' ? 'mois' : 'semaine' });
 
 export const utilisateurs = () => String(E.reglages.utilisateurs || E.moi || '').split(',').map(s => s.trim()).filter(Boolean);
 export const icone = cat => ICONES[cat] || '•';

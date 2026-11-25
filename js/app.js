@@ -221,7 +221,10 @@ function ecranAccueil() {
       h('div', { class: 'deux-col' },
         h('div', {}, h('small', {}, 'Revenus prévus'), h('strong', {}, argent(m.revenus))),
         h('div', {}, h('small', {}, 'Dépenses'), h('strong', {}, argent(m.depenses)),
-          h('small', { class: 'detail' }, `fixes ${argent(m.fixes)} · autres ${argent(m.variables)}`)))),
+          h('small', { class: 'detail' }, `fixes ${argent(m.fixes)} · autres ${argent(m.variables)}`))),
+      m.epicerie.base && vue.mois >= E.debut ? h('div', { class: 'ligne-epicerie' },
+        h('span', {}, `🛒 Épicerie : ${argent(m.epicerie.reel)} dépensés`),
+        m.epicerie.aVenir > 0 ? h('span', {}, `~${argent(m.epicerie.aVenir)} à venir`) : null) : null),
 
     h('section', { class: 'carte annee-resume' },
       h('h3', {}, `Année ${annee}`),

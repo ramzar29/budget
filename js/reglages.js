@@ -1,8 +1,8 @@
 // Écran Réglages (profil, sécurité, synchro, catégories, commerces) et onglet Récurrents (revenus récurrents, dépenses fixes).
 import { h, feuille, toast, confirmer, champ, champMontant, lireMontant } from './ui.js';
-import { E, categoriesPar, icone, reglage, rafraichirPrevus, utilisateurs } from './etat.js';
+import { E, categoriesPar, icone, reglage, rafraichirPrevus, utilisateurs, epicerie } from './etat.js';
 import { sauver, supprimer, getMeta, setMeta, uuid } from './db.js';
-import { argent, FREQUENCES_FIXES, UNITES, intervalle, libelleFrequence, premierPaiement, datesChoisies, moisDuFixe, datesFixe, decalerMois, historiqueDe, montantA, montantFixe, aujourdhui, moisCourant, nomMois, normaliser } from './calc.js';
+import { argent, FREQUENCES_FIXES, UNITES, intervalle, libelleFrequence, premierPaiement, datesChoisies, moisDuFixe, datesFixe, decalerMois, historiqueDe, montantA, montantFixe, aujourdhui, moisCourant, nomMois, normaliser, epicerieDuMois } from './calc.js';
 import { tester, synchroniser } from './sync.js';
 import { definirNip, verifierNip, biometrieDisponible, biometrieActive, activerBiometrie, desactiverBiometrie } from './lock.js';
 
@@ -13,8 +13,8 @@ const NOMS_MOIS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'a
 function section(titre, ...contenu) {
   return h('section', { class: 'carte reglage' }, h('h3', {}, titre), ...contenu);
 }
-function rangee(texte, detail, onclick, droite = '›') {
-  return h('button', { class: 'rangee', onclick }, h('span', {}, h('strong', {}, texte), detail ? h('small', {}, detail) : null), h('span', { class: 'chevron' }, droite));
+function rangee(texte, detail, onclick, droite = '›', classe = '') {
+  return h('button', { class: 'rangee' + (classe ? ' ' + classe : ''), onclick },h('span', {}, h('strong', {}, texte), detail ? h('small', {}, detail) : null), h('span', { class: 'chevron' }, droite));
 }
 
 export async function ecranReglages(rafraichir) {
@@ -51,7 +51,7 @@ export async function ecranReglages(rafraichir) {
     rangee('Catégories de revenus', `${categoriesPar('revenu').size} catégories`, () => gererCategories('revenu', rafraichir)),
     rangee('Commerces connus', `${E.commerces.length} commerces`, () => gererCommerces(rafraichir))));
 
-  racine.append(h('p', { class: 'aide centre' }, 'Budget · v7'));
+  racine.append(h('p', { class: 'aide centre' }, 'Budget · v8'));
   return racine;
 }
 
@@ -59,19 +59,49 @@ export async function ecranReglages(rafraichir) {
 export function ecranRecurrents(rafraichir) {
   const racine = h('div', { class: 'reglages' });
 
+  const ep = epicerie();
+  racine.append(section('🛒 Épicerie',
+    rangee('Montant prévu', ep.montant
+      ? `${argent(ep.montant)} par ${ep.frequence}${ep.frequence === 'semaine' ? ` · ≈ ${argent(epicerieDuMois(ep, moisCourant()))} ce mois` : ''}`
+      : 'Aucun — touche pour en ajouter un', () => modifierEpicerie(rafraichir))));
+
   const revs = E.revenus.map(r => rangee(r.nom,
     `${FREQ_REVENUS[r.frequence] || ''} · ${argent(montantA(r, aujourdhui()))}${r.personne ? ' · ' + r.personne : ''}${r.actif === false ? ' · inactif' : ''}`,
-    () => modifierRevenu(r, rafraichir)));
+    () => modifierRevenu(r, rafraichir), '›', r.actif === false ? 'inactif' : ''));
   racine.append(section('💵 Revenus récurrents', ...revs,
     h('button', { class: 'btn lien', onclick: () => modifierRevenu(null, rafraichir) }, '➕ Ajouter un revenu récurrent')));
 
   const fixes = E.fixes.map(f => rangee(f.nom,
     `${libelleFrequence(f.frequence)}${premierPaiement(f) ? ` · dès le ${premierPaiement(f)}` : ''} · ${argent(montantFixe(f, aujourdhui()))} · ${f.categorie}${f.actif === false ? ' · inactif' : ''}`,
-    () => modifierFixe(f, rafraichir)));
+    () => modifierFixe(f, rafraichir), '›', f.actif === false ? 'inactif' : ''));
   racine.append(section('📌 Dépenses fixes', ...fixes,
     h('button', { class: 'btn lien', onclick: () => modifierFixe(null, rafraichir) }, '➕ Ajouter une dépense fixe')));
 
   return racine;
+}
+
+// ------------------------------------------------------------------ Épicerie (montant prévu)
+function modifierEpicerie(rafraichir) {
+  feuille('🛒 Épicerie', (corps, fermer) => {
+    const ep = epicerie();
+    const montant = champMontant(ep.montant || '');
+    const freq = h('select', {}, h('option', { value: 'semaine', selected: ep.frequence === 'semaine' }, 'Par semaine'),
+      h('option', { value: 'mois', selected: ep.frequence === 'mois' }, 'Par mois'));
+    corps.append(h('form', { class: 'formulaire', onsubmit: async e => {
+      e.preventDefault();
+      const m = montant.value.trim() ? lireMontant(montant.value) : 0;
+      if (m === null || m < 0) return toast('Montant invalide', 'erreur');
+      await reglage('epicerieMontant', String(m));
+      await reglage('epicerieFrequence', freq.value);
+      E.reglages.epicerieMontant = String(m); E.reglages.epicerieFrequence = freq.value;
+      fermer(); rafraichir(); toast(m ? 'Montant d\'épicerie enregistré ✓' : 'Estimation d\'épicerie retirée');
+    } },
+      h('p', { class: 'aide' }, 'Ce montant sert à prévoir l\'épicerie des jours qui ne sont pas encore passés. Les jours passés comptent '
+        + 'seulement ce que tu as vraiment entré (sous-catégorie Épicerie). À la fin du mois, il ne reste que le réel.'),
+      champ('Montant prévu', montant, 'Laisse vide (ou 0) pour ne pas estimer l\'épicerie.'),
+      champ('Fréquence', freq),
+      h('div', { class: 'rangee-boutons' }, h('button', { type: 'submit', class: 'btn primaire' }, 'Enregistrer'))));
+  });
 }
 
 // ------------------------------------------------------------------ Profil

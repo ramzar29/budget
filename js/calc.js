@@ -217,9 +217,36 @@ export function occurrences(donnees, moisTxt) {
   return occ;
 }
 
+// ---------- épicerie estimée
+/** Dépense réelle d'épicerie (sous-catégorie « Épicerie », hors dépenses fixes). */
+export const estEpicerie = t => t.type === 'depense' && t.source !== 'fixe' && normaliser(t.sousCategorie) === 'epicerie';
+
+/** Montant de base de l'épicerie pour un mois entier (0 si non défini). */
+export function epicerieDuMois(epicerie, moisTxt) {
+  const montant = Number(epicerie && epicerie.montant) || 0;
+  if (montant <= 0) return 0;
+  if (epicerie.frequence === 'mois') return montant;
+  return montant / 7 * finDuMois(moisTxt).getDate(); // par semaine → par jour × jours du mois
+}
+
+/**
+ * Épicerie encore à venir dans un mois : seulement les jours pas encore passés.
+ * Mois passé : 0 (seul le réel compte). Mois en cours : jours après aujourd'hui. Mois futur : tout le mois.
+ */
+export function epicerieAVenir(epicerie, moisTxt, jour = aujourdhui()) {
+  const base = epicerieDuMois(epicerie, moisTxt);
+  if (!base) return 0;
+  const courant = jour.slice(0, 7);
+  if (moisTxt < courant) return 0;
+  if (moisTxt > courant) return base;
+  const jours = finDuMois(moisTxt).getDate();
+  return base / jours * (jours - Number(jour.slice(8, 10)));
+}
+
 /**
  * Totaux d'un mois.
- * donnees = { transactions (toutes, y compris supprimées), revenus, fixes, debut }
+ * donnees = { transactions (toutes, y compris supprimées), revenus, fixes, debut, epicerie: { montant, frequence } }
+ * restant = revenus − dépenses − épicerie encore à venir (estimée).
  */
 export function calculerMois(donnees, moisTxt) {
   const tousIds = new Set(donnees.transactions.map(t => t.id));
@@ -227,18 +254,21 @@ export function calculerMois(donnees, moisTxt) {
   const virtuelles = occurrences(donnees, moisTxt).filter(o => !tousIds.has(o.id));
   const lignes = reelles.concat(virtuelles);
 
-  let revenus = 0, fixes = 0, variables = 0;
+  let revenus = 0, fixes = 0, variables = 0, epicerieReel = 0;
   const parCat = {};
   for (const t of lignes) {
     const m = Number(t.montant) || 0;
     if (t.type === 'revenu') { revenus += m; continue; }
     if (t.source === 'fixe') fixes += m; else variables += m;
+    if (estEpicerie(t)) epicerieReel += m;
     parCat[t.categorie] = (parCat[t.categorie] || 0) + m;
   }
   const depenses = fixes + variables;
+  const aVenir = moisTxt >= donnees.debut ? epicerieAVenir(donnees.epicerie, moisTxt) : 0;
   return {
     mois: moisTxt, revenus: arrondi(revenus), fixes: arrondi(fixes), variables: arrondi(variables),
-    depenses: arrondi(depenses), restant: arrondi(revenus - depenses),
+    depenses: arrondi(depenses), restant: arrondi(revenus - depenses - aVenir),
+    epicerie: { reel: arrondi(epicerieReel), aVenir: arrondi(aVenir), base: arrondi(epicerieDuMois(donnees.epicerie, moisTxt)) },
     parCategorie: Object.entries(parCat).map(([categorie, total]) => ({ categorie, total: arrondi(total) }))
       .sort((a, b) => b.total - a.total),
     lignes
