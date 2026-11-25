@@ -168,6 +168,9 @@ input.montant { font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabul
 .rangee > span:first-child { display: flex; flex-direction: column; min-width: 0; }
 .rangee small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rangee.statique { cursor: default; }
+.rangee.inactif { opacity: .45; }
+.ligne-epicerie { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 10px; padding-top: 8px;
+  border-top: 1px solid var(--ligne); font-size: .82rem; }
 .chevron { color: var(--doux); font-size: 1.2rem; }
 .cat-bloc { padding: 10px 0; border-bottom: 1px solid var(--ligne); }
 .cat-tete { display: flex; justify-content: space-between; align-items: center; }
