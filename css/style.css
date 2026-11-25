@@ -32,7 +32,13 @@ small { color: var(--doux); }
 .entete h1 { font-size: 1.35rem; margin: 0; }
 .contenu { padding: 0 16px calc(96px + env(safe-area-inset-bottom)); max-width: 640px; margin: 0 auto; }
 .sync { border: 0; background: var(--accent-doux); color: var(--accent); border-radius: 99px; padding: 5px 11px;
-  font-size: .78rem; white-space: nowrap; max-width: 62vw; overflow: hidden; text-overflow: ellipsis; }
+  font-size: .78rem; white-space: nowrap; max-width: 50vw; overflow: hidden; text-overflow: ellipsis; }
+.entete-droite { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.roue { font-size: 1.3rem; }
+.roue.actif { background: var(--accent-doux); }
+.btn-aujourdhui { flex: none; border: 1px solid var(--ligne); background: var(--carte); color: var(--accent); border-radius: 99px;
+  padding: 6px 10px; font-size: .8rem; font-weight: 600; white-space: nowrap; }
+.btn-aujourdhui:active { background: var(--accent-doux); }
 .sync.attente { background: #fff3d6; color: var(--attente); }
 .sync.erreur { background: var(--negatif-fond); color: var(--negatif); }
 @media (prefers-color-scheme: dark) { .sync.attente { background: #3a2e12; } }
@@ -218,7 +224,10 @@ input.montant { font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabul
 
 /* ---- Recherche dans les entrées */
 .outils-entrees { display: flex; align-items: center; gap: 6px; }
-.outils-entrees .selecteur-mois { flex: 1; }
+.outils-entrees .selecteur-mois { flex: 1; min-width: 0; }
+.outils-entrees .mois-titre { white-space: nowrap; padding: 0 2px; }
+.outils-entrees:has(.btn-aujourdhui) .selecteur-mois .btn-icone { width: 30px; }
+.outils-entrees:has(.btn-aujourdhui) .mois-titre { font-size: .95rem; }
 .loupe { font-size: 1.15rem; }
 .loupe.actif { background: var(--accent-doux); color: var(--accent); }
 .titre-recherche { flex: 1; margin: 10px 0; font-size: 1rem; }
