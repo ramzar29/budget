@@ -234,7 +234,135 @@ function ecranAccueil() {
         m.epicerie.aVenir > 0 ? h('span', {}, `~${argent(m.epicerie.aVenir)} à venir`) : null) : null,
       parJour),
 
+    vue.mois >= E.debut && vue.mois <= moisCourant() ? carteRythme(m) : null,
+    vue.mois >= E.debut ? carteRepartition(m) : null,
+    carteSixMois(d),
     moisActuel ? carteAVenir(d) : null);
+}
+
+// ------------------------------------------------------------------ graphiques de l'Accueil (SVG)
+const ent = new Intl.NumberFormat('fr-CA', { maximumFractionDigits: 0 });
+const MOIS_COURTS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+/** Élément SVG à partir d'un texte (valeurs numériques et libellés fixes seulement). */
+function svg(markup) {
+  const boite = document.createElement('div');
+  boite.innerHTML = markup.trim();
+  return boite.firstChild;
+}
+const legende = (classe, texte) => h('span', {}, h('span', { class: 'carre ' + classe }), texte);
+
+/**
+ * Rythme du mois : dépenses courantes (tout sauf les dépenses fixes) cumulées jour par jour,
+ * comparées à une ligne droite = revenus prévus − fixes, répartis sur le mois (finir à 0 $).
+ */
+function carteRythme(m) {
+  const jours = finDuMois(vue.mois).getDate();
+  const enCours = vue.mois === moisCourant();
+  const jourRef = enCours ? new Date().getDate() : jours;
+  const budget = Math.max(0, m.revenus - m.fixes);
+  const parJour = new Array(jours + 1).fill(0);
+  for (const l of m.lignes) {
+    if (l.type !== 'depense' || l.source === 'fixe') continue;
+    const j = Number(String(l.date).slice(8, 10));
+    if (j >= 1 && j <= jours) parJour[j] += Number(l.montant) || 0;
+  }
+  const cumul = [0];
+  for (let j = 1; j <= jours; j++) cumul[j] = cumul[j - 1] + parJour[j];
+  const maxY = Math.max(budget, cumul[jourRef], 1);
+  const X = k => (30 + k / jours * 300).toFixed(1);
+  const Y = v => (140 - v / maxY * 120).toFixed(1);
+  const points = cumul.slice(0, jourRef + 1).map((v, k) => `${X(k)},${Y(v)}`).join(' ');
+  const xa = X(jourRef), ya = Y(cumul[jourRef]);
+  const milieu = Math.round(jours / 2);
+
+  const attendu = budget * jourRef / jours;
+  const ecart = attendu - cumul[jourRef];
+  const phrase = budget <= 0
+    ? h('p', { class: 'rythme-phrase negatif' }, 'Les dépenses fixes prennent déjà tous les revenus prévus.')
+    : h('p', { class: 'rythme-phrase ' + (ecart >= 0 ? 'positif' : 'negatif') },
+      (enCours ? '' : 'Mois terminé : ') + (ecart >= 0
+        ? `${argent(ecart)} sous le rythme prévu ✓`
+        : `${argent(-ecart)} au-dessus du rythme prévu`));
+
+  return h('section', { class: 'carte' },
+    h('h3', {}, '📈 Rythme du mois'),
+    svg(`<svg class="graphe" viewBox="0 0 340 160" width="100%" role="img" aria-label="Dépenses courantes cumulées comparées au rythme prévu">
+      <line class="g-axe" x1="30" y1="140" x2="330" y2="140"/>
+      ${budget > 0 ? `<line class="g-prevu" x1="30" y1="140" x2="330" y2="${Y(budget)}"/>` : ''}
+      ${enCours ? `<line class="g-repere" x1="${xa}" y1="30" x2="${xa}" y2="140"/>
+        <text class="g-texte" x="${Math.min(Math.max(xa, 60), 300)}" y="24" text-anchor="middle">aujourd'hui</text>` : ''}
+      <polyline class="g-courbe" points="${points}"/>
+      <circle class="g-point" cx="${xa}" cy="${ya}" r="4.5"/>
+      <text class="g-texte" x="30" y="156">1</text>
+      <text class="g-texte" x="${X(milieu)}" y="156" text-anchor="middle">${milieu}</text>
+      <text class="g-texte" x="330" y="156" text-anchor="end">${jours}</text>
+    </svg>`),
+    h('div', { class: 'legende' }, legende('s-courant', 'Tes dépenses courantes'), h('span', {}, h('span', { class: 'tiret' }), 'Rythme prévu')),
+    phrase);
+}
+
+/** Où va l'argent du mois : revenus prévus = fixes + autres + épicerie à venir + restant. */
+function carteRepartition(m) {
+  const parts = [
+    { nom: 'Fixes', v: m.fixes, c: 's-fixes' },
+    { nom: 'Autres', v: m.variables, c: 's-autres' },
+    { nom: 'Épicerie à venir', v: m.epicerie.aVenir, c: 's-epicerie' },
+    { nom: 'Restant', v: Math.max(0, m.restant), c: 's-restant' }
+  ].filter(p => p.v > 0);
+  if (!parts.length) return null;
+  const total = parts.reduce((s, p) => s + p.v, 0);
+  const C = 2 * Math.PI * 50;
+  let decal = 0;
+  const arcs = parts.map(p => {
+    const long = p.v / total * C;
+    const arc = `<circle class="${p.c}" cx="60" cy="60" r="50" stroke-dasharray="${Math.max(0, long - 1.5).toFixed(1)} ${C.toFixed(1)}" stroke-dashoffset="${(-decal).toFixed(1)}"/>`;
+    decal += long;
+    return arc;
+  }).join('');
+  const depasse = m.restant < 0;
+  const pctDe = v => m.revenus > 0 ? ` · ${Math.round(v / m.revenus * 100)} %` : '';
+  return h('section', { class: 'carte' },
+    h('h3', {}, '🍩 Où va l\'argent du mois'),
+    h('div', { class: 'repartition' },
+      svg(`<svg class="graphe anneau" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Répartition des revenus prévus du mois">
+        <g transform="rotate(-90 60 60)" fill="none" stroke-width="18">${arcs}</g>
+        <text class="g-texte" x="60" y="56" text-anchor="middle">${depasse ? 'dépassé de' : 'revenus'}</text>
+        <text class="g-total${depasse ? ' negatif' : ''}" x="60" y="72" text-anchor="middle">${ent.format(depasse ? -m.restant : m.revenus)} $</text>
+      </svg>`),
+      h('div', { class: 'legende colonne' }, ...parts.map(p => legende(p.c, `${p.nom} ${argent(p.v)}${pctDe(p.v)}`)),
+        depasse ? h('span', { class: 'negatif' }, `Restant ${argent(m.restant)}`) : null)));
+}
+
+/** Les 6 derniers mois (jusqu'au mois affiché) : ce qui restait à la fin de chaque mois. */
+function carteSixMois(d) {
+  const mois = [];
+  for (let i = 5; i >= 0; i--) { const mt = decalerMois(vue.mois, -i); if (mt >= E.debut) mois.push(mt); }
+  if (!mois.length) return null;
+  const valeurs = mois.map(mt => ({ mt, v: calculerMois(d, mt).restant }));
+  const max = Math.max(1, ...valeurs.map(x => Math.abs(x.v)));
+  const pas = 300 / 6, base = 80, hauteurMax = 50;
+  const barres = valeurs.map(({ mt, v }, i) => {
+    const x = 10 + (6 - valeurs.length + i) * pas + (pas - 24) / 2, hBarre = Math.max(2, Math.abs(v) / max * hauteurMax);
+    const y = v >= 0 ? base - hBarre : base;
+    const pasFini = mt >= moisCourant();
+    const etiquette = (v > 0 ? '+' : v < 0 ? '−' : '') + ent.format(Math.abs(v));
+    const yTexte = v >= 0 ? y - 5 : y + hBarre + 13;
+    return `<g class="g-mois${mt === vue.mois ? ' choisi' : ''}" data-mois="${mt}">
+      <rect x="${x - (pas - 24) / 2}" y="0" width="${pas}" height="130" fill="transparent"/>
+      <rect class="${v >= 0 ? 'g-pos' : 'g-neg'}${pasFini ? ' g-pasfini' : ''}" x="${x}" y="${y.toFixed(1)}" width="24" height="${hBarre.toFixed(1)}" rx="3"/>
+      <text class="g-valeur" x="${x + 12}" y="${yTexte.toFixed(1)}" text-anchor="middle">${etiquette}</text>
+      <text class="g-texte" x="${x + 12}" y="124" text-anchor="middle">${MOIS_COURTS[Number(mt.slice(5, 7)) - 1]}</text>
+    </g>`;
+  }).join('');
+  const graphe = svg(`<svg class="graphe" viewBox="0 0 320 130" width="100%" role="img" aria-label="Ce qui restait à la fin de chacun des derniers mois">
+    <line class="g-axe" x1="10" y1="${base}" x2="310" y2="${base}"/>${barres}</svg>`);
+  for (const g of graphe.querySelectorAll('[data-mois]')) {
+    g.addEventListener('click', () => { vue.mois = g.dataset.mois; dessiner(); window.scrollTo(0, 0); });
+  }
+  return h('section', { class: 'carte' },
+    h('h3', {}, '📊 Les 6 derniers mois'),
+    graphe,
+    h('p', { class: 'aide' }, 'Ce qui restait à la fin de chaque mois. Barre pâle = mois pas encore fini. Touche une barre pour ouvrir ce mois.'));
 }
 
 /** Dépenses fixes et paies prévues d'aujourd'hui à 7 jours plus tard (peut déborder sur le mois suivant). */
