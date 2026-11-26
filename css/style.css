@@ -178,6 +178,39 @@ input.montant { font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabul
 .avenir-date { color: var(--doux); font-size: .8rem; min-width: 72px; }
 .avenir-nom { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .avenir-montant { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* --- graphiques de l'Accueil (v12) */
+:root { --s-fixes: #6a5acd; --s-autres: #e07a3f; --s-epicerie: #d9a400; }
+@media (prefers-color-scheme: dark) { :root { --s-fixes: #9d91ec; --s-autres: #f0905a; --s-epicerie: #e8b93a; } }
+.graphe { display: block; overflow: visible; }
+.graphe text { font-size: 11px; font-variant-numeric: tabular-nums; }
+.g-texte { fill: var(--doux); }
+.g-valeur { fill: var(--texte); font-weight: 600; }
+.g-total { fill: var(--texte); font-size: 13px !important; font-weight: 700; }
+.g-total.negatif { fill: var(--negatif); }
+.g-axe { stroke: var(--ligne); stroke-width: 1.5; }
+.g-prevu { stroke: var(--doux); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.g-repere { stroke: var(--doux); stroke-width: .5; }
+.g-courbe { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.g-point { fill: var(--accent); stroke: var(--carte); stroke-width: 2; }
+.g-pos { fill: var(--positif); }
+.g-neg { fill: var(--negatif); }
+.g-pasfini { fill-opacity: .4; stroke-dasharray: 3 2; stroke-width: 1; }
+.g-pos.g-pasfini { stroke: var(--positif); }
+.g-neg.g-pasfini { stroke: var(--negatif); }
+.g-mois { cursor: pointer; }
+.g-mois.choisi .g-texte { fill: var(--texte); font-weight: 700; }
+.anneau .s-fixes { stroke: var(--s-fixes); } .anneau .s-autres { stroke: var(--s-autres); }
+.anneau .s-epicerie { stroke: var(--s-epicerie); } .anneau .s-restant { stroke: var(--positif); }
+.legende { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .8rem; color: var(--doux); margin-top: 4px; }
+.legende > span { display: flex; align-items: center; gap: 6px; }
+.legende.colonne { flex-direction: column; font-size: .85rem; color: var(--texte); }
+.carre { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.carre.s-courant { background: var(--accent); } .carre.s-fixes { background: var(--s-fixes); } .carre.s-autres { background: var(--s-autres); }
+.carre.s-epicerie { background: var(--s-epicerie); } .carre.s-restant { background: var(--positif); }
+.tiret { width: 14px; border-top: 2px dashed var(--doux); }
+.repartition { display: flex; align-items: center; gap: 14px; }
+.rythme-phrase { margin: 8px 0 0; font-size: .9rem; font-weight: 600; }
 .chevron { color: var(--doux); font-size: 1.2rem; }
 .cat-bloc { padding: 10px 0; border-bottom: 1px solid var(--ligne); }
 .cat-tete { display: flex; justify-content: space-between; align-items: center; }
