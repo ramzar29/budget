@@ -36,9 +36,6 @@ small { color: var(--doux); }
 .entete-droite { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .roue { font-size: 1.3rem; }
 .roue.actif { background: var(--accent-doux); }
-.btn-aujourdhui { flex: none; border: 1px solid var(--ligne); background: var(--carte); color: var(--accent); border-radius: 99px;
-  padding: 6px 10px; font-size: .8rem; font-weight: 600; white-space: nowrap; }
-.btn-aujourdhui:active { background: var(--accent-doux); }
 .sync.attente { background: #fff3d6; color: var(--attente); }
 .sync.erreur { background: var(--negatif-fond); color: var(--negatif); }
 @media (prefers-color-scheme: dark) { .sync.attente { background: #3a2e12; } }
@@ -79,6 +76,8 @@ small { color: var(--doux); }
 .mois-titre { border: 0; background: none; font-weight: 600; font-size: 1.05rem; }
 .btn-icone { border: 0; background: none; font-size: 1.4rem; width: 40px; height: 40px; border-radius: 50%; color: var(--doux); flex: none; }
 .btn-icone:active { background: var(--ligne); }
+.centre-annee { justify-content: center; }
+.choix-annee { width: auto; min-width: 120px; font-weight: 600; font-size: 1.05rem; text-align: center; }
 
 .liste-cat { list-style: none; margin: 0; padding: 0; }
 .liste-cat li { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; padding: 9px 0; border-bottom: 1px solid var(--ligne); cursor: pointer; }
@@ -229,8 +228,9 @@ input.montant { font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabul
 .outils-entrees { display: flex; align-items: center; gap: 6px; }
 .outils-entrees .selecteur-mois { flex: 1; min-width: 0; }
 .outils-entrees .mois-titre { white-space: nowrap; padding: 0 2px; }
-.outils-entrees:has(.btn-aujourdhui) .selecteur-mois .btn-icone { width: 30px; }
-.outils-entrees:has(.btn-aujourdhui) .mois-titre { font-size: .95rem; }
+.mois-titre.autre { color: var(--accent); }
+.mois-titre { position: relative; }
+.retour-mois { position: absolute; left: calc(100% + 3px); top: 50%; transform: translateY(-50%); font-size: .9em; white-space: nowrap; } /* hors du centrage : le nom ne bouge pas */
 .loupe { font-size: 1.15rem; }
 .loupe.actif { background: var(--accent-doux); color: var(--accent); }
 .titre-recherche { flex: 1; margin: 10px 0; font-size: 1rem; }
