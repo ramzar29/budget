@@ -1,6 +1,6 @@
 // Service worker : garde l'app disponible hors ligne.
 // Change VERSION à chaque mise à jour publiée pour que les téléphones prennent la nouvelle version.
-const VERSION = 'budget-v10';
+const VERSION = 'budget-v11';
 const FICHIERS = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/app.js', 'js/db.js', 'js/calc.js', 'js/etat.js', 'js/sync.js', 'js/lock.js',
