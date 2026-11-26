@@ -95,6 +95,7 @@ async function ecranVerrou() {
 // Écrans visités, pour que le bouton « retour » du téléphone revienne en arrière.
 const precedents = [];
 function aller(ecran, options = {}) {
+  if (ecran === 'annee' && !options.mois) options = { ...options, mois: moisCourant() }; // l'onglet Année s'ouvre sur l'année en cours
   if (ecran !== vue.ecran || options.filtre) {
     precedents.push({ ecran: vue.ecran, mois: vue.mois, filtre: vue.filtre });
     if (precedents.length > 30) precedents.shift();
@@ -145,12 +146,6 @@ function boutonReglages() {
   return h('button', { class: 'btn-icone roue' + (vue.ecran === 'reglages' ? ' actif' : ''), 'aria-label': 'Réglages', onclick: () => aller('reglages') }, '⚙️');
 }
 
-// « 📅 Aujourd'hui » : revient au mois actuel (affiché seulement si on regarde un autre mois).
-function boutonAujourdhui() {
-  if (vue.mois === moisCourant()) return null;
-  return h('button', { class: 'btn-aujourdhui', 'aria-label': 'Revenir au mois actuel', onclick: () => { vue.mois = moisCourant(); dessiner(); } }, '📅 Aujourd\'hui');
-}
-
 const indicateurSync = h('button', { class: 'sync', onclick: () => synchroniser() });
 surEtatSync(etat => {
   const heure = etat.derniere ? new Intl.DateTimeFormat('fr-CA', { hour: '2-digit', minute: '2-digit' }).format(etat.derniere) : null;
@@ -164,7 +159,11 @@ surEtatSync(etat => {
 function selecteurMois() {
   return h('div', { class: 'selecteur-mois' },
     h('button', { class: 'btn-icone', 'aria-label': 'Mois précédent', onclick: () => { vue.mois = decalerMois(vue.mois, -1); dessiner(); } }, '‹'),
-    h('button', { class: 'mois-titre', onclick: () => { vue.mois = moisCourant(); dessiner(); } }, nomMois(vue.mois)),
+    // Toucher le nom du mois ramène au mois actuel. Sur un autre mois : nom en couleur + ↩ pour le signaler.
+    vue.mois === moisCourant()
+      ? h('button', { class: 'mois-titre' }, nomMois(vue.mois))
+      : h('button', { class: 'mois-titre autre', 'aria-label': `${nomMois(vue.mois)} — toucher pour revenir au mois actuel`,
+          onclick: () => { vue.mois = moisCourant(); dessiner(); } }, nomMois(vue.mois), h('span', { class: 'retour-mois' }, ' ↩')),
     h('button', { class: 'btn-icone', 'aria-label': 'Mois suivant', onclick: () => { vue.mois = decalerMois(vue.mois, 1); dessiner(); } }, '›'));
 }
 
@@ -209,7 +208,7 @@ function ecranAccueil() {
   const signe = v => v >= 0 ? 'positif' : 'negatif';
 
   return h('div', {},
-    h('div', { class: 'outils-entrees' }, selecteurMois(), boutonAujourdhui()),
+    selecteurMois(),
     aConfirmer.length ? h('button', { class: 'bandeau', onclick: ouvrirConfirmations },
       `💵 ${aConfirmer.length} revenu${aConfirmer.length > 1 ? 's' : ''} à confirmer`, h('span', {}, '›')) : null,
     vue.mois < E.debut ? h('p', { class: 'aide centre' }, `Le suivi commence en ${nomMois(E.debut)}.`) : null,
@@ -265,7 +264,7 @@ function ecranEntrees() {
 
   if (!vue.recherche) {
     return h('div', {},
-      h('div', { class: 'outils-entrees' }, selecteurMois(), boutonAujourdhui(), loupe),
+      h('div', { class: 'outils-entrees' }, selecteurMois(), loupe),
       h('div', { class: 'cases-voir' },
         caseVoir('fixes', '📌 Fixes et paies', 'fixe'),
         caseVoir('saisis', '✍️ Saisis par moi', 'saisi')),
@@ -318,11 +317,20 @@ function ecranAnnee() {
   const annee = Number(vue.mois.slice(0, 4));
   const a = calculerAnnee(donneesCalc(), annee);
   const courant = moisCourant();
+  // Liste des années : de l'année suivante (toujours 1 an d'avance) jusqu'à la plus ancienne ayant des données.
+  const anneeCourante = Number(courant.slice(0, 4));
+  let plusAncienne = Math.min(anneeCourante, Number(String(E.debut).slice(0, 4)) || anneeCourante, annee);
+  for (const t of E.transactions) {
+    const y = Number(String(t.mois || t.date || '').slice(0, 4));
+    if (!t.supprime && y >= 2000 && y < plusAncienne) plusAncienne = y;
+  }
+  const choixAnnee = h('select', { class: 'choix-annee', 'aria-label': 'Année', onchange: () => {
+    vue.mois = `${choixAnnee.value}-${vue.mois.slice(5, 7)}`; dessiner();
+  } });
+  for (let y = Math.max(anneeCourante + 1, annee); y >= plusAncienne; y--) choixAnnee.append(h('option', { value: String(y) }, String(y)));
+  choixAnnee.value = String(annee);
   return h('div', {},
-    h('div', { class: 'selecteur-mois' },
-      h('button', { class: 'btn-icone', onclick: () => { vue.mois = decalerMois(vue.mois, -12); dessiner(); } }, '‹'),
-      h('span', { class: 'mois-titre' }, String(annee)),
-      h('button', { class: 'btn-icone', onclick: () => { vue.mois = decalerMois(vue.mois, 12); dessiner(); } }, '›')),
+    h('div', { class: 'selecteur-mois centre-annee' }, choixAnnee),
     h('section', { class: 'carte annee-resume' }, h('div', { class: 'deux-col' },
       h('div', {}, h('small', {}, 'Cumul depuis janvier'), h('strong', { class: a.cumul >= 0 ? 'positif' : 'negatif' }, argent(a.cumul))),
       h('div', {}, h('small', {}, 'Projection fin d\'année'), h('strong', { class: a.projection >= 0 ? 'positif' : 'negatif' }, argent(a.projection))))),
