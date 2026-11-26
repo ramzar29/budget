@@ -246,10 +246,11 @@ function grouper(lignes) {
 
 /**
  * Recherche dans tous les mouvements du fichier.
- * criteres = { type: 'tout' | 'revenu' | 'depense', categorie: '' | nom, texte }
+ * criteres = { type: 'tout' | 'revenu' | 'depense', categorie: '' | nom, texte, mois: '' | 'AAAA-MM' }
+ * mois : seulement ce mois-là, fixes prévus compris (comme le graphique « Dépenses par catégorie »).
  */
-export function rechercherEntrees({ type = 'tout', categorie = '', texte = '' }) {
-  let lignes = E.transactions.filter(t => !t.supprime);
+export function rechercherEntrees({ type = 'tout', categorie = '', texte = '', mois = '' }) {
+  let lignes = mois ? calculerMois(donneesCalc(), mois).lignes : E.transactions.filter(t => !t.supprime);
   if (type !== 'tout') lignes = lignes.filter(t => t.type === type);
   if (categorie) lignes = lignes.filter(t => t.categorie === categorie);
   let groupes = grouper(lignes);

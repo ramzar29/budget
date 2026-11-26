@@ -2,10 +2,10 @@
 import { h, vider, toast, fermerDerniere } from './ui.js';
 import { surChangement, getMeta } from './db.js';
 import { E, charger, initialiserSiVide, materialiser, donneesCalc, icone, revenusAConfirmer, reglage } from './etat.js';
-import { calculerMois, calculerAnnee, argent, moisCourant, decalerMois, nomMois, nomMoisCourt } from './calc.js';
+import { calculerMois, calculerAnnee, argent, moisCourant, decalerMois, nomMois, nomMoisCourt, finDuMois, aujourdhui, ymd, versDate } from './calc.js';
 import { demarrerSyncAuto, surEtatSync, synchroniser } from './sync.js';
 import { nipDefini, verifierNip, biometrieActive, biometrieDisponible, deverrouillerBiometrie, activerBiometrie, surveillerArrierePlan } from './lock.js';
-import { ouvrirAjout, ecranTransactions, ouvrirConfirmations, ouvrirSaisie, rechercherEntrees, listeEntrees } from './saisie.js';
+import { ouvrirAjout, ecranTransactions, ouvrirConfirmations, ouvrirSaisie, rechercherEntrees, listeEntrees, estFixe } from './saisie.js';
 import { ecranReglages, ecranRecurrents, choisirMoi, demanderNouveauNip, configurerSync } from './reglages.js';
 import { ouvrirPhoto } from './ocr.js';
 
@@ -200,12 +200,20 @@ async function dessiner() {
 function ecranAccueil() {
   const d = donneesCalc();
   const m = calculerMois(d, vue.mois);
-  const annee = Number(vue.mois.slice(0, 4));
-  const a = calculerAnnee(d, annee, vue.mois < moisCourant() ? vue.mois : moisCourant());
   const aConfirmer = revenusAConfirmer();
   const pct = m.revenus > 0 ? Math.min(100, Math.round(m.depenses / m.revenus * 100)) : (m.depenses > 0 ? 100 : 0);
-  const maxCat = Math.max(1, ...m.parCategorie.map(c => c.total));
   const signe = v => v >= 0 ? 'positif' : 'negatif';
+  const moisActuel = vue.mois === moisCourant() && vue.mois >= E.debut;
+
+  // Budget par jour : restant ÷ jours qui restent (aujourd'hui compris), mois en cours seulement.
+  let parJour = null;
+  if (moisActuel && m.restant > 0) {
+    const fin = finDuMois(vue.mois);
+    const jours = fin.getDate() - new Date().getDate() + 1;
+    parJour = h('div', { class: 'ligne-parjour' },
+      `💡 Environ ${argent(m.restant / jours)}/jour jusqu'au ${fin.getDate()} ${nomMoisCourt(vue.mois)}`,
+      m.epicerie.aVenir > 0 ? h('small', {}, ' (épicerie à venir déjà comptée)') : null);
+  }
 
   return h('div', {},
     selecteurMois(),
@@ -223,22 +231,45 @@ function ecranAccueil() {
           h('small', { class: 'detail' }, `fixes ${argent(m.fixes)} · autres ${argent(m.variables)}`))),
       m.epicerie.base && vue.mois >= E.debut ? h('div', { class: 'ligne-epicerie' },
         h('span', {}, `🛒 Épicerie : ${argent(m.epicerie.reel)} dépensés`),
-        m.epicerie.aVenir > 0 ? h('span', {}, `~${argent(m.epicerie.aVenir)} à venir`) : null) : null),
+        m.epicerie.aVenir > 0 ? h('span', {}, `~${argent(m.epicerie.aVenir)} à venir`) : null) : null,
+      parJour),
 
-    h('section', { class: 'carte annee-resume' },
-      h('h3', {}, `Année ${annee}`),
-      h('div', { class: 'deux-col' },
-        h('div', {}, h('small', {}, 'Cumul depuis janvier'), h('strong', { class: signe(a.cumul) }, argent(a.cumul))),
-        h('div', {}, h('small', {}, 'Projection fin d\'année'), h('strong', { class: signe(a.projection) }, argent(a.projection))))),
+    moisActuel ? carteAVenir(d) : null);
+}
 
-    h('section', { class: 'carte' },
-      h('h3', {}, 'Dépenses par catégorie'),
-      m.parCategorie.length ? h('ul', { class: 'liste-cat' }, ...m.parCategorie.map(c =>
-        h('li', { onclick: () => aller('transactions', { filtre: c.categorie }) },
-          h('span', { class: 'cat-nom' }, `${icone(c.categorie)} ${c.categorie}`),
-          h('span', { class: 'cat-montant' }, argent(c.total)),
-          h('span', { class: 'cat-barre' }, h('span', { style: { width: Math.round(c.total / maxCat * 100) + '%' } })))))
-        : h('p', { class: 'vide' }, 'Aucune dépense ce mois-ci. Appuie sur ＋ pour en ajouter une.')));
+/** Dépenses fixes et paies prévues d'aujourd'hui à 7 jours plus tard (peut déborder sur le mois suivant). */
+function carteAVenir(d) {
+  const debut = aujourdhui();
+  const finD = new Date(); finD.setDate(finD.getDate() + 6);
+  const fin = ymd(finD);
+  const mois = [...new Set([debut.slice(0, 7), fin.slice(0, 7)])];
+  const lignes = mois.flatMap(mt => calculerMois(d, mt).lignes)
+    .filter(l => estFixe(l) && l.date >= debut && l.date <= fin)
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.type === 'revenu' ? -1 : 1));
+  const fmtDate = new Intl.DateTimeFormat('fr-CA', { weekday: 'short', day: 'numeric', month: 'short' });
+  return h('section', { class: 'carte' },
+    h('h3', {}, '📆 À venir cette semaine'),
+    lignes.length ? h('ul', { class: 'liste-avenir' }, ...lignes.map(l =>
+      h('li', {},
+        h('span', { class: 'avenir-date' }, l.date === debut ? 'Aujourd\'hui' : fmtDate.format(versDate(l.date))),
+        h('span', { class: 'avenir-nom' }, `${icone(l.categorie)} ${l.commerce || l.sousCategorie || l.categorie}`),
+        h('span', { class: 'avenir-montant ' + (l.type === 'revenu' ? 'positif' : '') },
+          (l.type === 'revenu' ? '+ ' : '− ') + argent(l.montant)))))
+      : h('p', { class: 'vide' }, 'Rien de prévu cette semaine.'));
+}
+
+/** Graphique « Dépenses par catégorie » d'un mois ; la barre verte compare à la plus grosse catégorie. */
+function graphiqueCategories(moisTxt, surChoix) {
+  const m = calculerMois(donneesCalc(), moisTxt);
+  const maxCat = Math.max(1, ...m.parCategorie.map(c => c.total));
+  return h('section', { class: 'carte' },
+    h('h3', {}, `📊 Dépenses par catégorie — ${nomMois(moisTxt)}`),
+    m.parCategorie.length ? h('ul', { class: 'liste-cat' }, ...m.parCategorie.map(c =>
+      h('li', { onclick: () => surChoix(c.categorie) },
+        h('span', { class: 'cat-nom' }, `${icone(c.categorie)} ${c.categorie}`),
+        h('span', { class: 'cat-montant' }, argent(c.total)),
+        h('span', { class: 'cat-barre' }, h('span', { style: { width: Math.round(c.total / maxCat * 100) + '%' } })))))
+      : h('p', { class: 'vide' }, 'Aucune dépense ce mois-ci.'));
 }
 
 // ------------------------------------------------------------------ Mouvements du mois (+ recherche)
@@ -274,10 +305,11 @@ function ecranEntrees() {
 
   const r = vue.recherche;
   const resultats = h('div', {});
-  const type = h('select', { onchange: () => { r.type = type.value; r.categorie = ''; remplirCategories(); majResultats(); } },
+  // Choix manuel dans les listes : recherche dans tout le fichier (plus de limite au mois du graphique).
+  const type = h('select', { onchange: () => { r.type = type.value; r.categorie = ''; r.mois = ''; remplirCategories(); majResultats(); } },
     h('option', { value: 'tout' }, 'Tout'), h('option', { value: 'revenu' }, 'Revenus'), h('option', { value: 'depense' }, 'Dépenses'));
   type.value = r.type;
-  const categorie = h('select', { onchange: () => { r.categorie = categorie.value; majResultats(); } });
+  const categorie = h('select', { onchange: () => { r.categorie = categorie.value; r.mois = ''; majResultats(); } });
   function remplirCategories() {
     const types = r.type === 'tout' ? ['depense', 'revenu'] : [r.type];
     const noms = [...new Set(E.categories.filter(c => types.includes(c.type)).map(c => c.categorie))];
@@ -295,16 +327,26 @@ function ecranEntrees() {
     const groupes = rechercherEntrees(r);
     const somme = type => groupes.flat().filter(l => l.type === type).reduce((s, l) => s + Number(l.montant), 0);
     const totaux = [r.type !== 'depense' && `revenus ${argent(somme('revenu'))}`, r.type !== 'revenu' && `dépenses ${argent(somme('depense'))}`].filter(Boolean).join(' · ');
-    resultats.replaceChildren(
+    resultats.replaceChildren(...[
+      r.mois ? h('button', { class: 'puce filtre', onclick: () => { r.mois = ''; majResultats(); } },
+        `📅 ${nomMois(r.mois)} seulement ✕`) : null,
       h('p', { class: 'aide' }, groupes.length
         ? `${groupes.length} résultat${groupes.length > 1 ? 's' : ''} · ${totaux}`
         : 'Aucun résultat.'),
-      groupes.length ? listeEntrees(groupes, { avecAnnee: true }) : null);
+      groupes.length ? listeEntrees(groupes, { avecAnnee: !r.mois }) : null].filter(Boolean));
   }
   majResultats();
 
+  // Toucher une catégorie du graphique : Dépenses + cette catégorie, pour le mois du graphique seulement.
+  const graphique = graphiqueCategories(vue.mois, cat => {
+    Object.assign(r, { type: 'depense', categorie: cat, mois: vue.mois });
+    type.value = 'depense'; remplirCategories(); majResultats();
+    resultats.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
   return h('div', {},
-    h('div', { class: 'outils-entrees' }, h('h3', { class: 'titre-recherche' }, '🔍 Recherche dans tous les mouvements'), loupe),
+    h('div', { class: 'outils-entrees' }, h('h3', { class: 'titre-recherche' }, '🔍 Recherche dans les mouvements'), loupe),
+    graphique,
     h('section', { class: 'carte recherche' },
       h('label', { class: 'champ' }, h('span', { class: 'etiquette' }, 'Item(s) à rechercher'), type),
       h('label', { class: 'champ' }, h('span', { class: 'etiquette' }, 'Catégorie'), categorie),
