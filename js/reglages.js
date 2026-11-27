@@ -4,6 +4,7 @@ import { E, categoriesPar, icone, reglage, rafraichirPrevus, utilisateurs, epice
 import { sauver, supprimer, getMeta, setMeta, uuid } from './db.js';
 import { argent, FREQUENCES_FIXES, UNITES, intervalle, libelleFrequence, premierPaiement, datesChoisies, moisDuFixe, datesFixe, decalerMois, historiqueDe, montantA, montantFixe, aujourdhui, moisCourant, nomMois, normaliser, epicerieDuMois } from './calc.js';
 import { tester, synchroniser } from './sync.js';
+import qrcode from './qrcode.js'; // copie locale (aucun site externe : le code QR contient le jeton)
 import { definirNip, verifierNip, biometrieDisponible, biometrieActive, activerBiometrie, desactiverBiometrie } from './lock.js';
 
 const SEP = '¦';
@@ -56,7 +57,7 @@ export async function ecranReglages(rafraichir) {
     rangee('Catégories de revenus', `${categoriesPar('revenu').size} catégories`, () => gererCategories('revenu', rafraichir)),
     rangee('Commerces connus', `${E.commerces.length} commerces`, () => gererCommerces(rafraichir))));
 
-  racine.append(h('p', { class: 'aide centre' }, 'Budget · v17'));
+  racine.append(h('p', { class: 'aide centre' }, 'Budget · v18'));
   return racine;
 }
 
@@ -202,20 +203,6 @@ async function envoyerApp() {
   catch { toast('Lien : ' + adresseApp(), 'info'); }
 }
 
-const URL_QR = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
-let chargementQr;
-function chargerQr() {
-  if (window.qrcode) return Promise.resolve(window.qrcode);
-  if (!chargementQr) chargementQr = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = URL_QR;
-    s.onload = () => resolve(window.qrcode);
-    s.onerror = () => { chargementQr = null; reject(new Error('telechargement')); };
-    document.head.append(s);
-  });
-  return chargementQr;
-}
-
 async function relierTelephone() {
   const u = await getMeta('apiUrl'), j = await getMeta('jeton');
   if (!u || !j) return toast('Configure d\'abord la connexion au Google Sheets', 'erreur');
@@ -224,11 +211,8 @@ async function relierTelephone() {
     corps.append(h('form', { class: 'formulaire', onsubmit: async e => {
       e.preventDefault();
       if (!await verifierNip(nip.value)) return toast('NIP incorrect', 'erreur');
-      corps.replaceChildren(h('p', { class: 'aide centre' }, 'Préparation du code…'));
-      let qr;
-      try { qr = await chargerQr(); } catch { corps.replaceChildren(h('p', { class: 'aide' }, '❌ Connexion Internet nécessaire pour afficher le code.')); return; }
       const lien = adresseApp() + '#relier&u=' + encodeURIComponent(u) + '&j=' + encodeURIComponent(j);
-      const code = qr(0, 'M'); code.addData(lien); code.make();
+      const code = qrcode(0, 'M'); code.addData(lien); code.make();
       corps.replaceChildren(
         h('div', { class: 'code-qr' }, h('img', { src: code.createDataURL(6, 4), alt: 'Code QR' })),
         h('ol', { class: 'aide etapes-qr' },
