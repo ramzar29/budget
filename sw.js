@@ -1,6 +1,6 @@
 // Service worker : garde l'app disponible hors ligne.
 // Change VERSION à chaque mise à jour publiée pour que les téléphones prennent la nouvelle version.
-const VERSION = 'budget-v16';
+const VERSION = 'budget-v17';
 const FICHIERS = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/app.js', 'js/db.js', 'js/calc.js', 'js/etat.js', 'js/sync.js', 'js/lock.js',
@@ -16,7 +16,7 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()
-    .then(cles => Promise.all(cles.filter(k => k !== VERSION && !k.startsWith('ext-')).map(k => caches.delete(k))))
+    .then(cles => Promise.all(cles.filter(k => k.startsWith('budget-') && k !== VERSION).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
