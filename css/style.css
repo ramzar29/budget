@@ -291,3 +291,20 @@ input.montant { font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabul
 .rangee-perso input[type=date] { flex: 1; min-width: 150px; }
 .rangee-perso select { flex: 1; }
 input.nb-perso { width: 80px; flex: 0 0 80px; }
+
+/* Récap de l'année (page Année) */
+.recap-entete { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.recap-entete h3 { margin: 0; }
+.segments { display: inline-flex; border: 1px solid var(--ligne); border-radius: 99px; overflow: hidden; }
+.segments .seg { border: 0; background: var(--carte); color: var(--doux); padding: 5px 10px; font-size: .85rem; }
+.segments .seg + .seg { border-left: 1px solid var(--ligne); }
+.segments .seg.actif { background: var(--accent-doux); color: var(--accent); font-weight: 600; }
+.liste-recap { list-style: none; margin: 0; padding: 0; }
+.recap-cat { border-bottom: 1px solid var(--ligne); }
+.recap-tete { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 0; background: none; color: inherit; font: inherit; text-align: left; padding: 10px 0; cursor: pointer; }
+.recap-nom { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; }
+.recap-note { font-size: .75rem; color: var(--doux); font-style: italic; }
+.recap-sous { list-style: none; margin: 0 0 8px; padding: 0 0 0 22px; }
+.recap-sous li { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: .92rem; color: var(--doux); }
+.recap-sous li span:first-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; }
+.recap-total { display: flex; justify-content: space-between; padding: 10px 0 2px; font-weight: 700; }
