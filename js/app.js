@@ -513,7 +513,8 @@ function ecranAnnee() {
 }
 
 // ------------------------------------------------------------------ Récap de l'année (page Année)
-// Dépenses réellement passées (jusqu'à aujourd'hui) par catégorie / sous-catégorie, en total ou en moyenne.
+// Par catégorie / sous-catégorie : dépenses FIXES de toute l'année (passées + à venir) et dépenses ENTRÉES
+// jusqu'à aujourd'hui. Moyennes : fixes sur l'année complète, entrées sur la période déjà écoulée.
 // L'épicerie prévue (onglet Récurrents) n'est pas une ligne : seules les épiceries entrées comptent.
 let recapMode = (() => { try { return localStorage.getItem('recapMode') || 'total'; } catch { return 'total'; } })();
 const recapOuvertes = new Set();
@@ -524,28 +525,43 @@ function carteRecap(annee, a) {
   const debutSuivi = String(E.debut || '') + '-01';
   const du = debutSuivi > debutAnnee ? debutSuivi : debutAnnee;
   const au = auj < finAnnee ? auj : finAnnee;
+  const nbJours = (x, y) => x <= y ? Math.round((versDate(y) - versDate(x)) / 86400000) + 1 : 0;
+  const joursAnnee = nbJours(du, finAnnee);   // période des dépenses fixes (année complète suivie)
+  const joursEcoules = nbJours(du, au);        // période des dépenses entrées (jusqu'à aujourd'hui)
+  const moisSuivis = a.mois.filter(m => m.actif).length;
 
+  const vide = () => ({ fixe: 0, entre: 0, aVenir: 0 });
+  const ajouter = (acc, t, v, date) => {
+    if (t.source === 'fixe') { acc.fixe += v; if (date > auj) acc.aVenir += v; } else acc.entre += v;
+  };
   const cats = new Map();
-  let total = 0;
+  const total = vide();
   for (const m of a.mois) {
     if (!m.actif) continue;
     for (const t of m.lignes) {
       if (t.type !== 'depense') continue;
-      if ((t.date || m.mois + '-01') > auj) continue;
       const v = Number(t.montant) || 0;
       if (!v) continue;
-      const c = cats.get(t.categorie) || { total: 0, sous: new Map() };
-      c.total += v;
-      const s = t.sousCategorie || '(sans sous-catégorie)';
-      c.sous.set(s, (c.sous.get(s) || 0) + v);
+      const date = t.date || m.mois + '-01';
+      if (t.source !== 'fixe' && date > auj) continue; // dépense entrée datée dans le futur : pas encore faite
+      const c = cats.get(t.categorie) || { ...vide(), sous: new Map() };
+      ajouter(c, t, v, date);
+      const nomSous = t.sousCategorie || '(sans sous-catégorie)';
+      const sc = c.sous.get(nomSous) || vide();
+      ajouter(sc, t, v, date);
+      c.sous.set(nomSous, sc);
       cats.set(t.categorie, c);
-      total += v;
+      ajouter(total, t, v, date);
     }
   }
 
-  const jours = du <= au ? Math.round((versDate(au) - versDate(du)) / 86400000) + 1 : 0;
-  const diviseur = recapMode === 'mois' ? jours / (365.25 / 12) : recapMode === 'semaine' ? jours / 7 : 1;
-  const valeur = n => argent(diviseur > 0 ? n / diviseur : 0);
+  const parPeriode = recapMode === 'mois' ? 365.25 / 12 : recapMode === 'semaine' ? 7 : 0;
+  const montant = acc => {
+    if (!parPeriode) return acc.fixe + acc.entre;
+    // Fixes par mois : ÷ nombre de mois suivis (loyer 1 500 $ → 1 500 $/mois pile) ; par semaine : ÷ semaines.
+    const fixe = recapMode === 'mois' ? (moisSuivis ? acc.fixe / moisSuivis : 0) : (joursAnnee ? acc.fixe / (joursAnnee / 7) : 0);
+    return fixe + (joursEcoules ? acc.entre / (joursEcoules / parPeriode) : 0);
+  };
   const suffixe = recapMode === 'mois' ? ' /mois' : recapMode === 'semaine' ? ' /sem.' : '';
 
   const bouton = (cle, texte) => h('button', {
@@ -553,10 +569,14 @@ function carteRecap(annee, a) {
     onclick: () => { recapMode = cle; try { localStorage.setItem('recapMode', cle); } catch {} dessiner(); }
   }, texte);
 
-  const triees = [...cats.entries()].sort((x, y) => y[1].total - x[1].total);
-  const estEpi = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase() === 'epicerie';
-  const note = h('span', { class: 'recap-note' }, 'montants entrés seulement');
+  const estEpi = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() === 'epicerie';
+  const note = texte => h('span', { class: 'recap-note' }, texte);
+  const notes = (acc, epicerie) => [
+    epicerie ? note('montants entrés seulement') : null,
+    !parPeriode && acc.aVenir > 0.004 ? note(`dont ${argent(acc.aVenir)} à venir`) : null
+  ];
 
+  const triees = [...cats.entries()].sort((x, y) => montant(y[1]) - montant(x[1]));
   const lignes = triees.map(([nom, c]) => {
     const ouverte = recapOuvertes.has(nom);
     const aEpicerie = [...c.sous.keys()].some(estEpi);
@@ -564,16 +584,26 @@ function carteRecap(annee, a) {
       h('button', { class: 'recap-tete', 'aria-expanded': String(ouverte), onclick: () => {
         if (ouverte) recapOuvertes.delete(nom); else recapOuvertes.add(nom); dessiner();
       } },
-        h('span', { class: 'recap-nom' }, `${ouverte ? '▾' : '▸'} ${icone(nom)} ${nom}`, aEpicerie && !ouverte ? note.cloneNode(true) : null),
-        h('span', { class: 'cat-montant' }, valeur(c.total))));
+        h('span', { class: 'recap-nom' }, `${ouverte ? '▾' : '▸'} ${icone(nom)} ${nom}`, ...(ouverte ? [] : notes(c, aEpicerie))),
+        h('span', { class: 'cat-montant' }, argent(montant(c)))));
     if (ouverte) {
-      li.append(h('ul', { class: 'recap-sous' }, ...[...c.sous.entries()].sort((x, y) => y[1] - x[1]).map(([s, v]) =>
-        h('li', {}, h('span', {}, s, estEpi(s) ? note.cloneNode(true) : null), h('span', { class: 'cat-montant' }, valeur(v))))));
+      li.append(h('ul', { class: 'recap-sous' }, ...[...c.sous.entries()].sort((x, y) => montant(y[1]) - montant(x[1])).map(([s, sc]) =>
+        h('li', {}, h('span', {}, s, ...notes(sc, estEpi(s))), h('span', { class: 'cat-montant' }, argent(montant(sc)))))));
     }
     return li;
   });
 
   const fmtJour = d => { const x = versDate(d); return `${x.getDate() === 1 ? '1er' : x.getDate()} ${nomMoisCourt(d.slice(0, 7)).toLowerCase()}`; };
+  const explications = [];
+  if (joursAnnee) {
+    explications.push(`Dépenses fixes : toute l'année ${annee}, y compris celles à venir.`);
+    explications.push(joursEcoules
+      ? `Dépenses entrées : du ${fmtJour(du)} au ${fmtJour(au)} ${au.slice(0, 4)} (${joursEcoules} jours).`
+      : 'Dépenses entrées : aucune pour l\'instant (année pas encore commencée).');
+    if (parPeriode) explications.push(`Moyenne ${recapMode === 'mois' ? 'par mois' : 'par semaine'} : les fixes sur l'année complète, les dépenses entrées sur la période déjà écoulée.`);
+    explications.push('L\'épicerie prévue ne compte pas.');
+  }
+
   return h('section', { class: 'carte recap' },
     h('div', { class: 'recap-entete' },
       h('h3', {}, `📋 Récap ${annee}`),
@@ -581,13 +611,9 @@ function carteRecap(annee, a) {
         bouton('total', 'Total'), bouton('mois', '/mois'), bouton('semaine', '/semaine'))),
     triees.length
       ? h('ul', { class: 'liste-recap' }, ...lignes,
-          h('li', { class: 'recap-total' }, h('span', {}, 'Total des dépenses'), h('span', { class: 'cat-montant' }, valeur(total) + suffixe)))
-      : h('p', { class: 'vide' }, jours ? 'Aucune dépense entrée pour cette année.'
-          : annee > Number(auj.slice(0, 4)) ? 'Cette année n\'est pas encore commencée.' : 'Le suivi n\'avait pas encore commencé cette année-là.'),
-    jours ? h('p', { class: 'aide' },
-      `Dépenses du ${fmtJour(du)} au ${fmtJour(au)} ${au.slice(0, 4)} (${jours} jours). `
-      + (recapMode === 'total' ? '' : `Moyenne ${recapMode === 'mois' ? 'par mois' : 'par semaine'} sur cette période. `)
-      + 'Les dépenses fixes à venir et l\'épicerie prévue ne comptent pas.') : null);
+          h('li', { class: 'recap-total' }, h('span', {}, 'Total des dépenses'), h('span', { class: 'cat-montant' }, argent(montant(total)) + suffixe)))
+      : h('p', { class: 'vide' }, joursAnnee ? 'Aucune dépense pour cette année.' : 'Le suivi n\'avait pas encore commencé cette année-là.'),
+    explications.length ? h('p', { class: 'aide' }, explications.join(' ')) : null);
 }
 
 demarrer().catch(e => {
