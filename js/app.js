@@ -16,11 +16,39 @@ let confirmationsMontrees = false;
 
 // ------------------------------------------------------------------ démarrage
 async function demarrer() {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  installerMisesAJour();
   await initialiserSiVide();
   await charger();
   if (!(await nipDefini())) return accueilPremiereFois();
   await ecranVerrou();
+}
+
+// Mises à jour : le téléphone vérifie sw.js sans cache (à l'ouverture et à chaque retour dans l'app).
+// Quand une nouvelle version prend le relais, la page se recharge UNE fois (pas si une fenêtre de saisie
+// est ouverte : dans ce cas, au prochain passage en arrière-plan), puis affiche « Mise à jour installée ».
+function installerMisesAJour() {
+  if (!('serviceWorker' in navigator)) return;
+  const avaitControleur = !!navigator.serviceWorker.controller; // false = toute première installation
+  let rechargement = false;
+  const recharger = () => {
+    if (rechargement) return;
+    rechargement = true;
+    try { sessionStorage.setItem('majInstallee', '1'); } catch {}
+    location.reload();
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!avaitControleur) return;
+    if (!document.querySelector('.fond-modal')) return recharger();
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') recharger(); });
+  });
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
+  }).catch(() => {});
+  let maj = null;
+  try { maj = sessionStorage.getItem('majInstallee'); sessionStorage.removeItem('majInstallee'); } catch {}
+  if (maj) setTimeout(() => toast('Mise à jour installée ✓'), 800);
 }
 
 let dejaDemarre = false;
@@ -530,9 +558,9 @@ function carteRecap(annee, a) {
   const joursEcoules = nbJours(du, au);        // période des dépenses entrées (jusqu'à aujourd'hui)
   const moisSuivis = a.mois.filter(m => m.actif).length;
 
-  const vide = () => ({ fixe: 0, entre: 0, aVenir: 0 });
+  const vide = () => ({ fixe: 0, entre: 0 });
   const ajouter = (acc, t, v, date) => {
-    if (t.source === 'fixe') { acc.fixe += v; if (date > auj) acc.aVenir += v; } else acc.entre += v;
+    if (t.source === 'fixe') acc.fixe += v; else acc.entre += v;
   };
   const cats = new Map();
   const total = vide();
@@ -571,10 +599,7 @@ function carteRecap(annee, a) {
 
   const estEpi = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() === 'epicerie';
   const note = texte => h('span', { class: 'recap-note' }, texte);
-  const notes = (acc, epicerie) => [
-    epicerie ? note('montants entrés seulement') : null,
-    !parPeriode && acc.aVenir > 0.004 ? note(`dont ${argent(acc.aVenir)} à venir`) : null
-  ];
+  const notes = (acc, epicerie) => [epicerie ? note('montants entrés seulement') : null];
 
   const triees = [...cats.entries()].sort((x, y) => montant(y[1]) - montant(x[1]));
   const lignes = triees.map(([nom, c]) => {

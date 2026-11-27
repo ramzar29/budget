@@ -1,6 +1,6 @@
 // Service worker : garde l'app disponible hors ligne.
 // Change VERSION à chaque mise à jour publiée pour que les téléphones prennent la nouvelle version.
-const VERSION = 'budget-v14';
+const VERSION = 'budget-v15';
 const FICHIERS = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/app.js', 'js/db.js', 'js/calc.js', 'js/etat.js', 'js/sync.js', 'js/lock.js',
@@ -9,7 +9,9 @@ const FICHIERS = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(FICHIERS)).then(() => self.skipWaiting()));
+  // cache: 'reload' : télécharge les vrais nouveaux fichiers (pas la copie gardée 10 min par GitHub).
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(FICHIERS.map(f => new Request(f, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -35,8 +37,8 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Fichiers de l'app : réseau d'abord (mises à jour), sinon cache (hors ligne).
-  e.respondWith(fetch(e.request).then(rep => {
+  // Fichiers de l'app : réseau d'abord en revalidant toujours auprès de GitHub (no-cache), sinon cache (hors ligne).
+  e.respondWith(fetch(e.request, { cache: 'no-cache' }).then(rep => {
     if (rep.ok) { const copie = rep.clone(); caches.open(VERSION).then(c => c.put(e.request, copie)); }
     return rep;
   }).catch(() => caches.match(e.request).then(r => r || caches.match('index.html'))));
