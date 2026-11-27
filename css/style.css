@@ -308,3 +308,9 @@ input.nb-perso { width: 80px; flex: 0 0 80px; }
 .recap-sous li { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: .92rem; color: var(--doux); }
 .recap-sous li span:first-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; }
 .recap-total { display: flex; justify-content: space-between; padding: 10px 0 2px; font-weight: 700; }
+
+/* v16 : partage (code QR) */
+.code-qr { display: flex; justify-content: center; margin: 8px 0 12px; }
+.code-qr img { width: min(260px, 80vw); height: auto; image-rendering: pixelated; background: #fff; border-radius: 8px; }
+.etapes-qr { padding-left: 20px; margin: 0 0 8px; }
+.etapes-qr li { margin-bottom: 4px; }

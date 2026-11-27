@@ -1,6 +1,6 @@
 // Point d'entrée : démarrage, verrou, navigation et écrans Accueil / Mouvements / Année (Récurrents et Réglages : reglages.js).
 import { h, vider, toast, fermerDerniere } from './ui.js';
-import { surChangement, getMeta } from './db.js';
+import { surChangement, getMeta, setMeta } from './db.js';
 import { E, charger, initialiserSiVide, materialiser, donneesCalc, icone, revenusAConfirmer, reglage } from './etat.js';
 import { calculerMois, calculerAnnee, argent, moisCourant, decalerMois, nomMois, nomMoisCourt, finDuMois, aujourdhui, ymd, versDate } from './calc.js';
 import { demarrerSyncAuto, surEtatSync, synchroniser } from './sync.js';
@@ -17,6 +17,7 @@ let confirmationsMontrees = false;
 // ------------------------------------------------------------------ démarrage
 async function demarrer() {
   installerMisesAJour();
+  await lireLienRelier();
   await initialiserSiVide();
   await charger();
   if (!(await nipDefini())) return accueilPremiereFois();
@@ -51,6 +52,15 @@ function installerMisesAJour() {
   if (maj) setTimeout(() => toast('Mise à jour installée ✓'), 800);
 }
 
+// Lien « relier » (code QR de Réglages › Partager) : l'adresse et le jeton sont gardés sur le téléphone
+// (retirés de la barre d'adresse) et préremplissent la fenêtre de connexion au Google Sheets.
+async function lireLienRelier() {
+  if (!location.hash.startsWith('#relier')) return;
+  const p = new URLSearchParams(location.hash.slice(1));
+  history.replaceState(null, '', location.pathname + location.search);
+  if (p.get('u') && p.get('j')) await setMeta('relierEnAttente', { u: p.get('u'), j: p.get('j') });
+}
+
 let dejaDemarre = false;
 async function apresDeverrouillage() {
   deverrouille = true;
@@ -66,6 +76,7 @@ async function apresDeverrouillage() {
     history.pushState({ budget: 'tampon' }, ''); // réarme le bouton retour après un reverrouillage
   }
   dessiner();
+  if (await getMeta('relierEnAttente')) configurerSync(dessiner); // téléphone déjà configuré qui scanne un code
 }
 
 async function accueilPremiereFois() {

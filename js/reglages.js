@@ -45,13 +45,18 @@ export async function ecranReglages(rafraichir) {
     rangee('Connexion au Google Sheets', apiUrl ? 'Configurée' : 'À configurer', () => configurerSync(rafraichir)),
     rangee('Synchroniser maintenant', null, async () => { await synchroniser(); toast('Synchro lancée'); }, '↻')));
 
+  // ---- Partage
+  racine.append(section('👥 Partager le budget',
+    rangee('📤 Envoyer l\'app', 'Le lien pour l\'installer (aucun secret dedans)', () => envoyerApp()),
+    rangee('🔗 Relier un autre téléphone', 'Code QR à scanner : même budget, sans ton compte Google', () => relierTelephone())));
+
   // ---- Catégories
   racine.append(section('🗂️ Catégories',
     rangee('Catégories de dépenses', `${categoriesPar('depense').size} catégories`, () => gererCategories('depense', rafraichir)),
     rangee('Catégories de revenus', `${categoriesPar('revenu').size} catégories`, () => gererCategories('revenu', rafraichir)),
     rangee('Commerces connus', `${E.commerces.length} commerces`, () => gererCommerces(rafraichir))));
 
-  racine.append(h('p', { class: 'aide centre' }, 'Budget · v15'));
+  racine.append(h('p', { class: 'aide centre' }, 'Budget · v16'));
   return racine;
 }
 
@@ -184,13 +189,68 @@ function changerNip() {
   });
 }
 
+// ------------------------------------------------------------------ Partage
+const adresseApp = () => location.origin + location.pathname;
+
+async function envoyerApp() {
+  const texte = 'Voici l\'app de budget. Ouvre le lien dans Chrome, puis menu ⋮ › « Ajouter à l\'écran d\'accueil ». ' +
+    'Ensuite, je te montrerai un code QR pour relier ton téléphone à notre budget.';
+  try {
+    if (navigator.share) { await navigator.share({ title: 'Budget', text: texte, url: adresseApp() }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(texte + ' ' + adresseApp()); toast('Lien copié ✓'); }
+  catch { toast('Lien : ' + adresseApp(), 'info'); }
+}
+
+const URL_QR = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+let chargementQr;
+function chargerQr() {
+  if (window.qrcode) return Promise.resolve(window.qrcode);
+  if (!chargementQr) chargementQr = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = URL_QR;
+    s.onload = () => resolve(window.qrcode);
+    s.onerror = () => { chargementQr = null; reject(new Error('telechargement')); };
+    document.head.append(s);
+  });
+  return chargementQr;
+}
+
+async function relierTelephone() {
+  const u = await getMeta('apiUrl'), j = await getMeta('jeton');
+  if (!u || !j) return toast('Configure d\'abord la connexion au Google Sheets', 'erreur');
+  feuille('Relier un autre téléphone', (corps, fermer) => {
+    const nip = h('input', { type: 'password', inputmode: 'numeric', maxlength: 8 });
+    corps.append(h('form', { class: 'formulaire', onsubmit: async e => {
+      e.preventDefault();
+      if (!await verifierNip(nip.value)) return toast('NIP incorrect', 'erreur');
+      corps.replaceChildren(h('p', { class: 'aide centre' }, 'Préparation du code…'));
+      let qr;
+      try { qr = await chargerQr(); } catch { corps.replaceChildren(h('p', { class: 'aide' }, '❌ Connexion Internet nécessaire pour afficher le code.')); return; }
+      const lien = adresseApp() + '#relier&u=' + encodeURIComponent(u) + '&j=' + encodeURIComponent(j);
+      const code = qr(0, 'M'); code.addData(lien); code.make();
+      corps.replaceChildren(
+        h('div', { class: 'code-qr' }, h('img', { src: code.createDataURL(6, 4), alt: 'Code QR' })),
+        h('ol', { class: 'aide etapes-qr' },
+          h('li', {}, 'Sur l\'autre téléphone, ouvre l\'appareil photo et vise ce code.'),
+          h('li', {}, 'Touche le lien qui apparaît : l\'app s\'ouvre.'),
+          h('li', {}, 'Crée le profil (nom et NIP de cette personne), puis touche « Tester et enregistrer ».')),
+        h('p', { class: 'aide' }, '🔒 Ce code contient la clé de ton budget : montre-le seulement à la personne voulue, ne l\'envoie pas par message. ' +
+          'Téléphone perdu ? Lance « changerJeton » dans Apps Script, puis relie de nouveau vos téléphones.'),
+        h('button', { class: 'btn primaire', onclick: () => fermer() }, 'Terminé'));
+    } }, champ('Ton NIP', nip, 'Pour afficher le code QR.'), h('button', { type: 'submit', class: 'btn primaire' }, 'Afficher le code QR')));
+    setTimeout(() => nip.focus(), 250);
+  });
+}
+
 // ------------------------------------------------------------------ Synchro
 export function configurerSync(rafraichir) {
   return new Promise(resolve => {
     feuille('Connexion au Google Sheets', async (corps, fermer) => {
-      const url = h('input', { type: 'url', value: (await getMeta('apiUrl')) || '', placeholder: 'https://script.google.com/macros/s/…/exec' });
-      const jeton = h('input', { type: 'password', value: (await getMeta('jeton')) || '', autocomplete: 'off' });
-      const statut = h('p', { class: 'aide' });
+      const recu = await getMeta('relierEnAttente');
+      const url = h('input', { type: 'url', value: (recu && recu.u) || (await getMeta('apiUrl')) || '', placeholder: 'https://script.google.com/macros/s/…/exec' });
+      const jeton = h('input', { type: 'password', value: (recu && recu.j) || (await getMeta('jeton')) || '', autocomplete: 'off' });
+      const statut = h('p', { class: 'aide' }, recu ? '✓ Adresse et jeton reçus par le code QR. Touche « Tester et enregistrer ».' : '');
       corps.append(h('form', { class: 'formulaire', onsubmit: async e => {
         e.preventDefault();
         statut.textContent = 'Vérification…';
@@ -198,7 +258,8 @@ export function configurerSync(rafraichir) {
           const rep = await tester(url.value.trim(), jeton.value.trim());
           await setMeta('apiUrl', url.value.trim());
           await setMeta('jeton', jeton.value.trim());
-          toast(`Connecté à « ${rep.fichier} » ✓`);
+          await setMeta('relierEnAttente', null);
+          toast(recu ? 'Budget relié ✓' : `Connecté à « ${rep.fichier} » ✓`);
           fermer(true);
           synchroniser();
         } catch (err) {
